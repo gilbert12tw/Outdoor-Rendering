@@ -64,6 +64,11 @@
     <ClInclude Include="src\terrain\TerrainSceneObject.h" />
     <ClInclude Include="src\ViewFrustumSceneObject.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="imgui.ini" />
+    <None Include="src\shader\oglFragmentShader.glsl" />
+    <None Include="src\shader\oglVertexShader.glsl" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{ADA5FF44-3FBE-44D5-94ED-FFD82E3DF373}</ProjectGuid>
     <RootNamespace>Rendering_Framework</RootNamespace>

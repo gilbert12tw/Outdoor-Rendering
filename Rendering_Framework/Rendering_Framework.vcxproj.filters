@@ -162,4 +162,9 @@
       <Filter>Header Files\camera</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="imgui.ini" />
+    <None Include="src\shader\oglFragmentShader.glsl" />
+    <None Include="src\shader\oglVertexShader.glsl" />
+  </ItemGroup>
 </Project>
