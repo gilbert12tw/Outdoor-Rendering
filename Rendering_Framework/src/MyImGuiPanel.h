@@ -16,9 +16,10 @@ public:
 	void update();
 	void setAvgFPS(const double avgFPS);
 	void setAvgFrameTime(const double avgFrameTime);
+	int getTeleportIdx();
 
 private:
 	double m_avgFPS;
 	double m_avgFrameTime;
+	int teleportIdx = -1;
 };
-

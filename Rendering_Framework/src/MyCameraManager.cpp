@@ -16,7 +16,7 @@ void MyCameraManager::init(const int w, const int h){
 	this->m_godCameraControl = new INANOA::MyOrbitControl(w, h);
 	this->m_godMyCamera = new INANOA::MyCamera(glm::vec3(50.0, 120.0, 100.0), glm::vec3(50.0, 0.0, 60.0), glm::vec3(0.0, 1.0, 0.0), -1.0);
 	this->m_godCameraControl->setCamera(this->m_godMyCamera);
-	this->m_playerCameraForwardSpeed = 0.05;
+	this->m_playerCameraForwardSpeed = 0.03;
 	// initialize player camera
 	this->m_playerMyCamera = new INANOA::MyCamera(glm::vec3(50.0, 50.0, 120.0), glm::vec3(50.0, 47.0, 110.0), glm::vec3(0.0, 1.0, 0.0), -1.0);
 
