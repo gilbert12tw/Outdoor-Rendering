@@ -44,7 +44,7 @@ void pureColor(){
 
 void main(){
 	color1 = vec4(f_worldNormal, 0.0);
-	color2 = vec4(f_worldVertex, 1.0);
+	color2 = vec4(f_worldVertex, 0.0);
 	if(pixelProcessId == 5){
 		pureColor() ;
 	}
