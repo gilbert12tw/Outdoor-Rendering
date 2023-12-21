@@ -20,16 +20,49 @@ void MyImGuiPanel::update() {
 	const std::string FT_STR = "Frame: " + std::to_string(this->m_avgFrameTime);
 	ImGui::TextColored(ImVec4(0, 220, 0, 255), FT_STR.c_str());
 
-	// button
 	if (ImGui::Button("Teleport 0")) {
 		teleportIdx = 0;
-	} 
+	}
+    ImGui::SameLine();
 	if (ImGui::Button("Teleport 1")) {
 		teleportIdx = 1;
 	}
+    ImGui::SameLine();
 	if (ImGui::Button("Teleport 2")) {
 		teleportIdx = 2;
 	}
+
+    // normal maping button
+    if (ImGui::Button("Normal Mapping")) {
+        normalMapping = !normalMapping;
+    }
+    ImGui::SameLine();
+
+    // 5 type of G buffer
+    // 1: world position, 2: world normal, 3: diffuse, 4: specular
+    if (ImGui::Button("Original")) {
+        gBufferIdx = 0;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Gamma correction")) {
+        gBufferIdx = 5;
+    }
+
+    if (ImGui::Button("World space vertex")) {
+        gBufferIdx = 1;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("World space normal")) {
+        gBufferIdx = 2;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Diffuse")) {
+        gBufferIdx = 3;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Specular")) {
+        gBufferIdx = 4;
+    }
 }
 
 int MyImGuiPanel::getTeleportIdx() {

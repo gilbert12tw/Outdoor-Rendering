@@ -6,6 +6,8 @@ layout(location=2) in vec3 v_uv ;
 
 out vec3 f_viewVertex ;
 out vec3 f_uv ;
+out vec3 f_worldVertex ;
+out vec3 f_worldNormal ;
 
 layout(location = 0) uniform mat4 modelMat ;
 layout(location = 5) uniform sampler2D elevationMap ;
@@ -25,6 +27,8 @@ void commonProcess(){
 	
 	f_viewVertex = viewVertex.xyz;
 	f_uv = v_uv ;
+	f_worldVertex = worldVertex.xyz ;
+	f_worldNormal = worldNormal.xyz ;
 
 	gl_Position = projMat * viewVertex ;
 }
@@ -48,6 +52,8 @@ void terrainProcess(){
 	
 	f_viewVertex = viewVertex.xyz;
 	f_uv = uv.xyz ;
+	f_worldVertex = worldV.xyz ;
+	f_worldNormal = normalTex.xyz ;
 
 	gl_Position = projMat * viewVertex ;
 }

@@ -23,8 +23,8 @@
 #pragma comment (lib, "lib-vc2015\\glfw3.lib")
 #pragma comment(lib, "assimp-vc141-mt.lib")
 
-int FRAME_WIDTH = 1920;
-int FRAME_HEIGHT = 1080;
+int FRAME_WIDTH = 2560;
+int FRAME_HEIGHT = 1440;
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void mouseScrollCallback(GLFWwindow *window, double xoffset, double yoffset);
@@ -74,6 +74,7 @@ void drawMagicRock();
 void drawAirplane();
 void drawIndirectRender();
 
+void processBtnInput();
 
 MyImGuiPanel* m_imguiPanel = nullptr;
 
@@ -87,7 +88,6 @@ ViewFrustumSceneObject* m_viewFrustumSO = nullptr;
 MyTerrain* m_terrain = nullptr;
 INANOA::MyCameraManager* m_myCameraManager = nullptr;
 // ==============================================
-
 
 void updateWhenPlayerProjectionChanged(const float nearDepth, const float farDepth);
 void viewFrustumMultiClipCorner(const std::vector<float> &depths, const glm::mat4 &viewMat, const glm::mat4 &projMat, float *clipCorner);
@@ -105,12 +105,24 @@ ShaderProgram* indirectRenderShaderProgram;
 
 ShaderProgram* cullingShaderProgram, *clearShaderProgram;
 
+// Gbuffer
+// vao
+GLuint gbufferVAO;
+// shader program
+ShaderProgram* gbufferShaderProgram;
+
 // ==============================================
+
 // SSBO handle
 GLuint wholeDataBufferHandle, visibleDataBufferHandle, cmdBufferHandle;
 
 // Gbuffer handle
 GLuint gbuffer, gbufferTex[4];
+
+// ==============================================
+// uniform variable
+bool normalMaping;
+int gBufferIdx = 5;
 
 int main(){
 	glfwInit();
@@ -189,11 +201,8 @@ void vsyncDisabled(GLFWwindow *window) {
 			previousTimeForFPS = currentTime;
 		}			
 
-		// teleport
-		const int teleportIdx = m_imguiPanel->getTeleportIdx();
-		if (teleportIdx != -1) {
-			m_myCameraManager->teleport(teleportIdx);
-		}
+
+        processBtnInput();
 
 		glfwPollEvents();
 		paintGL();
@@ -288,13 +297,13 @@ void setUpGbuffer() {
     glGenTextures(4, gbufferTex);
     // for diffuse
     glBindTexture(GL_TEXTURE_2D, gbufferTex[0]);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, FRAME_WIDTH, FRAME_HEIGHT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for normal
     glBindTexture(GL_TEXTURE_2D, gbufferTex[1]);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -307,6 +316,8 @@ void setUpGbuffer() {
     // for depth
     glBindTexture(GL_TEXTURE_2D, gbufferTex[3]);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // attach texture to framebuffer
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, gbufferTex[0], 0);
@@ -314,7 +325,31 @@ void setUpGbuffer() {
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, gbufferTex[2], 0);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, gbufferTex[3], 0);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // vao
+    glGenVertexArrays(1, &gbufferVAO);
+    glBindVertexArray(gbufferVAO);
+
+    // vbo
+    GLuint gbufferVBO;
+    glGenBuffers(1, &gbufferVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, gbufferVBO);
+
+    // vertex
+    float verts[18] = {
+            -1.0, -1.0, 0.0,
+            1.0, -1.0, 0.0,
+            -1.0, 1.0, 0.0,
+
+            -1.0, 1.0, 0.0,
+            1.0, -1.0, 0.0,
+            1.0, 1.0, 0.0
+    };
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    glBindVertexArray(0);
 }
 
 void loadModel(Shape &modelShape, std::string modelPath, int hasTangent) {
@@ -721,71 +756,46 @@ void loadTexture() {
 }
 
 void compileShaderProgram() {
+    auto createShaderProgram = [](std::string vs_path, std::string fs_path) -> ShaderProgram* {
+        ShaderProgram* shaderProgram = new ShaderProgram();
+        shaderProgram->init();
+
+        // vertex shader
+        Shader* vsShader = new Shader(GL_VERTEX_SHADER);
+        vsShader->createShaderFromFile(vs_path);
+
+        // fragment shader
+        Shader* fsShader = new Shader(GL_FRAGMENT_SHADER);
+        fsShader->createShaderFromFile(fs_path);
+
+        shaderProgram->attachShader(vsShader);
+        shaderProgram->attachShader(fsShader);
+        shaderProgram->checkStatus();
+        if (shaderProgram->status() != ShaderProgramStatus::READY) {
+            return nullptr;
+        }
+        shaderProgram->linkProgram();
+
+        vsShader->releaseShader();
+        fsShader->releaseShader();
+
+        return shaderProgram;
+    };
+
 	// magic rock
-	magicRockShaderProgram = new ShaderProgram();
-	magicRockShaderProgram->init();
-
-	// vertex shader
-	Shader* vsShader = new Shader(GL_VERTEX_SHADER);
-	vsShader->createShaderFromFile("src\\shader\\magicRock.vs.glsl");
-
-	// fragment shader
-	Shader* fsShader = new Shader(GL_FRAGMENT_SHADER);
-	fsShader->createShaderFromFile("src\\shader\\magicRock.fs.glsl");
-
-	magicRockShaderProgram->attachShader(vsShader);
-	magicRockShaderProgram->attachShader(fsShader);
-	magicRockShaderProgram->checkStatus();
-	if (magicRockShaderProgram->status() != ShaderProgramStatus::READY) {
-		return;
-	}
-	magicRockShaderProgram->linkProgram();
-	
-	vsShader->releaseShader();
-	fsShader->releaseShader();
+	magicRockShaderProgram = createShaderProgram("src\\shader\\magicRock.vs.glsl", "src\\shader\\magicRock.fs.glsl");
 
 	// airplane
-	airplaneShaderProgram = new ShaderProgram();
-	airplaneShaderProgram->init();
-
-	// vertex shader
-	vsShader = new Shader(GL_VERTEX_SHADER);
-	vsShader->createShaderFromFile("src\\shader\\airplane.vs.glsl");
-
-	// fragment shader
-	fsShader = new Shader(GL_FRAGMENT_SHADER);
-	fsShader->createShaderFromFile("src\\shader\\airplane.fs.glsl");
-
-	airplaneShaderProgram->attachShader(vsShader);
-	airplaneShaderProgram->attachShader(fsShader);
-	airplaneShaderProgram->checkStatus();
-	if (airplaneShaderProgram->status() != ShaderProgramStatus::READY) {
-		return;
-	}
-	airplaneShaderProgram->linkProgram();
+	airplaneShaderProgram = createShaderProgram("src\\shader\\airplane.vs.glsl", "src\\shader\\airplane.fs.glsl");
 
     // indirect render shader
-    indirectRenderShaderProgram = new ShaderProgram();
-    indirectRenderShaderProgram->init();
+    indirectRenderShaderProgram = createShaderProgram("src\\shader\\indirectRender.vs.glsl", "src\\shader\\indirectRender.fs.glsl");
 
-    // vertex shader
-    vsShader = new Shader(GL_VERTEX_SHADER);
-    vsShader->createShaderFromFile("src\\shader\\indirectRender.vs.glsl");
+    // gbuffer shader
+    gbufferShaderProgram = createShaderProgram("src\\shader\\deferred.vs.glsl", "src\\shader\\deferred.fs.glsl");
 
-    // fragment shader
-    fsShader = new Shader(GL_FRAGMENT_SHADER);
-    fsShader->createShaderFromFile("src\\shader\\indirectRender.fs.glsl");
-
-    indirectRenderShaderProgram->attachShader(vsShader);
-    indirectRenderShaderProgram->attachShader(fsShader);
-    indirectRenderShaderProgram->checkStatus();
-    if (indirectRenderShaderProgram->status() != ShaderProgramStatus::READY) {
-        return;
-    }
-    indirectRenderShaderProgram->linkProgram();
-
-    // ====== computer shader ======
-    // culing shader
+    // ====== computer shader =============================
+    // culling shader
     cullingShaderProgram = new ShaderProgram();
     cullingShaderProgram->init();
 
@@ -830,11 +840,14 @@ void drawMagicRock() {
 	// uniform
 	glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
 	glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
+    glm::vec3 cameraPos = m_myCameraManager->playerViewOrig();
 
 	// pass uniform
 	unsigned int programId = magicRockShaderProgram->programId();
 	glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMat));
 	glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, GL_FALSE, glm::value_ptr(projMat));
+    glUniform3fv(glGetUniformLocation(programId, "cameraPos"), 1, glm::value_ptr(cameraPos));
+    glUniform1i(glGetUniformLocation(programId, "normalMaping"), normalMaping);
 
 	// pass texture
 	glActiveTexture(GL_TEXTURE0);
@@ -997,9 +1010,12 @@ void paintGL() {
 
 	// =============================================
 
-    // bind gbuffers
-    //glBindFramebuffer(GL_FRAMEBUFFER, gbuffer);
-    //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    //  =======================  bind gbuffers
+    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer);
+    const GLenum gbufferAttachments[] = {GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, gbufferAttachments);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // =============================================
 
 	// start rendering
 	ImGui_ImplOpenGL3_NewFrame();
@@ -1029,13 +1045,17 @@ void paintGL() {
     computeDrawCommands();
     drawIndirectRender();
 
-    // draw frame buffer
-    //glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // ================= draw frame buffer ====================
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // draw gbuffer
-    //glUseProgram(gbufferShaderProgram);
-    //glBindVertexArray(gbufferVAO);
+    gbufferShaderProgram->useProgram();
+    int programId = gbufferShaderProgram->programId();
+    glm::vec3 eyePos = m_myCameraManager->playerViewOrig();
+    glUniform1i(glGetUniformLocation(programId, "gbuffer_mode"), gBufferIdx);
+    glUniform3fv(glGetUniformLocation(programId, "eye_position"), 1, glm::value_ptr(eyePos));
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, gbufferTex[0]); // diffuse
@@ -1046,9 +1066,16 @@ void paintGL() {
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_2D, gbufferTex[3]); // depth
 
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    // texture
+    glUniform1i(glGetUniformLocation(programId,"diffuse_map"), 0);
+    glUniform1i(glGetUniformLocation(programId,"normal_map"), 1);
+    glUniform1i(glGetUniformLocation(programId,"position_map"), 2);
 
+    // set viewport to all
+    defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
 
+    glBindVertexArray(gbufferVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);
 
 	// =============================================
 
@@ -1073,7 +1100,7 @@ void computeDrawCommands() {
     // culling shader
     cullingShaderProgram->useProgram();
     // pass camera position
-    glm::vec3 cameraPosition = m_myCameraManager->playerCameraLookCenter();
+    glm::vec3 cameraPosition = m_myCameraManager->playerViewOrig();
     glm::vec3 lookCenter = m_myCameraManager->playerCameraLookCenter();
     glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
     glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
@@ -1109,6 +1136,22 @@ void computeDrawCommands() {
 
 
 ////////////////////////////////////////////////
+
+void processBtnInput() {
+    // teleport
+    const int teleportIdx = m_imguiPanel->getTeleportIdx();
+    if (teleportIdx != -1) {
+        m_myCameraManager->teleport(teleportIdx);
+    }
+
+    // normal map
+    normalMaping = m_imguiPanel->getNormalMapping();
+
+    // G-buffer index
+    gBufferIdx = m_imguiPanel->getGBufferIdx();
+}
+
+
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods){
 	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
 		m_myCameraManager->mousePress(RenderWidgetMouseButton::M_LEFT, cursorPos[0], cursorPos[1]);
@@ -1192,14 +1235,43 @@ void updateWhenPlayerProjectionChanged(const float nearDepth, const float farDep
 
 	delete corners;
 }
+
 void resize(const int w, const int h) {
 	FRAME_WIDTH = w;
 	FRAME_HEIGHT = h;
 
+    glViewport(0, 0, w, h);
+    // for diffuse
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[0]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, w, h);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    // for normal
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[1]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+
+    // for coordinate
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[2]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    // for depth
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[3]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, w, h);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
 	m_myCameraManager->resize(w, h);
 	defaultRenderer->resize(w, h);
 	updateWhenPlayerProjectionChanged(0.1, m_myCameraManager->playerCameraFar());
+
 }
+
 void viewFrustumMultiClipCorner(const std::vector<float> &depths, const glm::mat4 &viewMat, const glm::mat4 &projMat, float *clipCorner) {
 	const int NUM_CLIP = depths.size();
 

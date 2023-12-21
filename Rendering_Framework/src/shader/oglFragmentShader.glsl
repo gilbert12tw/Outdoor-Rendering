@@ -2,12 +2,18 @@
 
 in vec3 f_viewVertex ;
 in vec3 f_uv ;
+in vec3 f_worldVertex;
+in vec3 f_worldNormal;
 
-layout (location = 0) out vec4 fragColor ;
+//layout (location = 0) out vec4 fragColor ;
 
 layout(location = 2) uniform int pixelProcessId;
 layout(location = 4) uniform sampler2D albedoTexture ;
 
+// output to the G-buffer
+layout (location = 0) out vec4 color0; //Diffuse map
+layout (location = 1) out vec4 color1; //Normal map
+layout (location = 2) out vec4 color2; //Coordinate
 
 vec4 withFog(vec4 color){
 	const vec4 FOG_COLOR = vec4(0.0, 0.0, 0.0, 1) ;
@@ -26,15 +32,19 @@ vec4 withFog(vec4 color){
 
 void terrainPass(){
 	vec4 texel = texture(albedoTexture, f_uv.xy) ;
-	fragColor = withFog(texel); 
-	fragColor.a = 1.0;	
+	//fragColor = withFog(texel);
+	//fragColor.a = 1.0;
+	color0 = vec4(withFog(texel).xyz, 1.0);
 }
 
 void pureColor(){
-	fragColor = withFog(vec4(1.0, 0.0, 0.0, 1.0)) ;
+	//fragColor = withFog(vec4(1.0, 0.0, 0.0, 1.0)) ;
+	color0 = withFog(vec4(1.0, 0.0, 0.0, 1.0)) ;
 }
 
-void main(){	
+void main(){
+	color1 = vec4(f_worldNormal, 0.0);
+	color2 = vec4(f_worldVertex, 1.0);
 	if(pixelProcessId == 5){
 		pureColor() ;
 	}
