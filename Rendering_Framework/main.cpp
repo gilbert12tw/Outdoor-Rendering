@@ -2,6 +2,7 @@
 #include "src\SceneRenderer.h"
 #include <GLFW\glfw3.h>
 #include "src\MyImGuiPanel.h"
+#include <glm/gtx/quaternion.hpp>
 
 #include "src\ViewFrustumSceneObject.h"
 #include "src\terrain\MyTerrain.h"
@@ -17,7 +18,7 @@
 #include <stb_image.h>
 
 // include spatial sample
-#include "src\SpatialSample.h"
+#include "src\MyPoissonSample.h"
 
 #pragma comment (lib, "lib-vc2015\\glfw3.lib")
 #pragma comment(lib, "assimp-vc141-mt.lib")
@@ -63,10 +64,15 @@ struct DrawCommand {
 void loadModel(Shape &modelShape, std::string modelPath, int hasTangent);
 void loadTexture();
 void loadAllSpatialSample();
+void loadIndirectModel();
+
+void computeDrawCommands();
+void setUpGbuffer();
 
 void compileShaderProgram();
 void drawMagicRock();
 void drawAirplane();
+void drawIndirectRender();
 
 
 MyImGuiPanel* m_imguiPanel = nullptr;
@@ -94,10 +100,17 @@ ShaderProgram* magicRockShaderProgram;
 Shape airplane;
 ShaderProgram* airplaneShaderProgram;
 
-// ==============================================
-// SSBO
-GLuint wholeDataBufferHandle, visibleDataBufferHandle;
+Shape mergeObject;
+ShaderProgram* indirectRenderShaderProgram;
 
+ShaderProgram* cullingShaderProgram, *clearShaderProgram;
+
+// ==============================================
+// SSBO handle
+GLuint wholeDataBufferHandle, visibleDataBufferHandle, cmdBufferHandle;
+
+// Gbuffer handle
+GLuint gbuffer, gbufferTex[4];
 
 int main(){
 	glfwInit();
@@ -189,7 +202,6 @@ void vsyncDisabled(GLFWwindow *window) {
 }
 
 
-
 bool initializeGL(){
 	// initialize shader program
 	// vertex shader
@@ -249,19 +261,60 @@ bool initializeGL(){
 	// =================================================================
 	// =================================================================
 
+    // Gbuffer
+    setUpGbuffer();
+
 	// shader program
 	compileShaderProgram();
 	
 	// load model
 	loadModel(magicRock, "assets\\MagicRock\\magicRock.obj", 1);
 	loadModel(airplane, "assets\\airplane.obj", 0);
+    loadIndirectModel();
 
+    stbi_set_flip_vertically_on_load(true);
 	loadTexture();
 
 	// load spatial sample
 	loadAllSpatialSample();
 
 	return true;
+}
+
+void setUpGbuffer() {
+    glGenFramebuffers(1, &gbuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer);
+
+    glGenTextures(4, gbufferTex);
+    // for diffuse
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[0]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    // for normal
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[1]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    // for coordinate
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[2]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    // for depth
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[3]);
+    glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+
+    // attach texture to framebuffer
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, gbufferTex[0], 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, gbufferTex[1], 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, gbufferTex[2], 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, gbufferTex[3], 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void loadModel(Shape &modelShape, std::string modelPath, int hasTangent) {
@@ -272,7 +325,7 @@ void loadModel(Shape &modelShape, std::string modelPath, int hasTangent) {
 	glGenVertexArrays(1, &modelShape.vao);
 	glBindVertexArray(modelShape.vao);
 
-	int flags = aiProcess_Triangulate | aiProcess_FlipUVs;
+	int flags = aiProcessPreset_TargetRealtime_MaxQuality;
 	if (hasTangent == 1) {
 		flags = flags | aiProcess_CalcTangentSpace;
 	}
@@ -333,71 +386,224 @@ void loadModel(Shape &modelShape, std::string modelPath, int hasTangent) {
 	// ===========================================
 }
 
+void loadIndirectModel() {
+    // load model
+    const std::string modelPaths[] = {
+        "assets\\grassB",
+        "assets\\bush01_lod2",
+        "assets\\bush05_lod2",
+        "assets\\Medieval_Building_LowPoly\\medieval_building_lowpoly_1",
+        "assets\\Medieval_Building_LowPoly\\medieval_building_lowpoly_2",
+    };
+
+    Assimp::Importer importer;
+    glGenVertexArrays(1, &mergeObject.vao);
+    glGenBuffers(1, &mergeObject.vbo_position);
+    glGenBuffers(1, &mergeObject.vbo_normal);
+    glGenBuffers(1, &mergeObject.vbo_texcoord);
+    glGenBuffers(1, &mergeObject.ibo);
+
+    glBindVertexArray(mergeObject.vao);
+
+    const unsigned long long SUM_VERTECIES = 571641;
+    glBindBuffer(GL_ARRAY_BUFFER, mergeObject.vbo_position);
+    glBufferData(GL_ARRAY_BUFFER, SUM_VERTECIES * 3 * sizeof(float), nullptr, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mergeObject.vbo_normal);
+    glBufferData(GL_ARRAY_BUFFER, SUM_VERTECIES * 3 * sizeof(float), nullptr, GL_STATIC_DRAW);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mergeObject.vbo_texcoord);
+    glBufferData(GL_ARRAY_BUFFER, SUM_VERTECIES * 3 * sizeof(float), nullptr, GL_STATIC_DRAW);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mergeObject.ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, SUM_VERTECIES * sizeof(unsigned int), nullptr, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+
+    int numVertices = 0, numFaces = 0;
+    for (int model_id = 0; model_id < 5; model_id++) {
+        std::string modelPath = modelPaths[model_id];
+        std::string modelFile = modelPath + ".obj";
+
+        const aiScene *scene = importer.ReadFile(modelFile, aiProcessPreset_TargetRealtime_MaxQuality);
+
+        if (scene == nullptr) {
+            std::cout << "failed to load model\n";
+            std::cout << "model file : " << modelFile << "\n";
+            return;
+        }
+
+        // Goemetry
+        for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
+
+            aiMesh *mesh = scene->mMeshes[i];
+
+            glBindVertexArray(mergeObject.vao);
+
+            // vertex buffer object
+            glBindBuffer(GL_ARRAY_BUFFER, mergeObject.vbo_position);
+            glBufferSubData(GL_ARRAY_BUFFER, numVertices * 3 * sizeof(float), mesh->mNumVertices * sizeof(aiVector3D),
+                            mesh->mVertices);
+
+            // normal buffer object
+            glBindBuffer(GL_ARRAY_BUFFER, mergeObject.vbo_normal);
+            glBufferSubData(GL_ARRAY_BUFFER, numVertices * 3 * sizeof(float), mesh->mNumVertices * sizeof(aiVector3D),
+                            mesh->mNormals);
+
+            // texcoord buffer object
+            glBindBuffer(GL_ARRAY_BUFFER, mergeObject.vbo_texcoord);
+            // change the texcoord from 2D to 3D (add model id)
+            for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
+                mesh->mTextureCoords[0][i].z = float(model_id);
+            }
+            glBufferSubData(GL_ARRAY_BUFFER, numVertices * 3 * sizeof(float), mesh->mNumVertices * sizeof(aiVector3D),
+                            mesh->mTextureCoords[0]);
+
+            // index buffer object
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mergeObject.ibo);
+            unsigned int *indices = new unsigned int[mesh->mNumFaces * 3];
+            for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
+                indices[i * 3 + 0] = mesh->mFaces[i].mIndices[0];
+                indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
+                indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
+                //if (i < 100) std::cout << indices[i * 3 + 0] << " " << indices[i * 3 + 1] << " " << indices[i * 3 + 2] << "\n";
+            }
+            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, numFaces * 3 * sizeof(unsigned int),mesh->mNumFaces * 3 * sizeof(unsigned int), indices);
+            numVertices += mesh->mNumVertices;
+            numFaces += mesh->mNumFaces;
+
+            //std::cout << "num vertices : " << mesh->mNumVertices << "\n";
+            //std::cout << "num faces : " << mesh->mNumFaces << "\n";
+            delete[] indices;
+        }
+
+        //std::cout << "num vertices : " << numVertices << "\n";
+        //std::cout << "num faces : " << numFaces << "\n";
+
+        importer.FreeScene();
+    }
+
+    glBindVertexArray(0);
+}
+
 void loadAllSpatialSample() {
 	// load spatial sample
 	// ===========================================
-	SpatialSample* spatialSample[5];
-	spatialSample[0] = SpatialSample::importBinaryFile("assets\\poissonPoints_621043_after.ppd2");
-	spatialSample[1] = SpatialSample::importBinaryFile("assets\\poissonPoints_2797.ppd2");
-	spatialSample[2] = SpatialSample::importBinaryFile("assets\\poissonPoints_1010.ppd2");
-	spatialSample[3] = SpatialSample::importBinaryFile("assets\\cityLots_sub_0.ppd2");
-	spatialSample[4] = SpatialSample::importBinaryFile("assets\\cityLots_sub_1.ppd2");
-    int numSample = spatialSample[0]->numSample() + spatialSample[1]->numSample() + spatialSample[2]->numSample() + spatialSample[3]->numSample() + spatialSample[4]->numSample();
-	if (spatialSample == nullptr) {
-		std::cout << "Failed to load spatial sample\n";
-		return;
-	}
+    // load samples
+    MyPoissonSample* sample[5];
+    sample[0] = MyPoissonSample::fromFile("assets\\poissonPoints_621043_after.ppd2");
+    sample[1] = MyPoissonSample::fromFile("assets\\poissonPoints_2797.ppd2");
+    sample[2] = MyPoissonSample::fromFile("assets\\poissonPoints_1010.ppd2");
+    sample[3] = MyPoissonSample::fromFile("assets\\cityLots_sub_0.ppd2");
+    sample[4] = MyPoissonSample::fromFile("assets\\cityLots_sub_1.ppd2");
+    int numSample = sample[0]->m_numSample + sample[1]->m_numSample + sample[2]->m_numSample + sample[3]->m_numSample + sample[4]->m_numSample;
 
-    // new a buffer
-    float *instanceOffset = new float[numSample * 4];
+    // std::cout << "num sample : " << numSample << "\n";
+    // std::cout << "suample 0 : " << sample[0]->m_numSample << "\n";
+    // std::cout << "suample 1 : " << sample[1]->m_numSample << "\n";
+    // std::cout << "suample 2 : " << sample[2]->m_numSample << "\n";
+    // std::cout << "suample 3 : " << sample[3]->m_numSample << "\n";
+    // std::cout << "suample 4 : " << sample[4]->m_numSample << "\n";
+
+    float *instance = new float[numSample * 20];
+    //MyInstance *instance = new MyInstance[numSample];
     int preNumSample = 0;
     for (int c = 0; c < 5; c++) {
-        for (int i = 0; i < spatialSample[c]->numSample(); i++) {
-            const float *position = spatialSample[c]->position(i);
-            instanceOffset[(preNumSample + i) * 3 + 0] = position[0];
-            instanceOffset[(preNumSample + i) * 3 + 1] = position[1];
-            instanceOffset[(preNumSample + i) * 3 + 2] = position[2];
-            instanceOffset[(preNumSample + i) * 3 + 3] = 1.0f;
+        // query position and rotation
+        for(int i = 0; i < sample[c]->m_numSample; i++){
+            glm::vec4 position(sample[c]->m_positions[i * 3 + 0], sample[c]->m_positions[i * 3 + 1], sample[c]->m_positions[i * 3 + 2], c);
+            glm::vec3 rad(sample[c]->m_radians[i * 3 + 0], sample[c]->m_radians[i * 3 + 1], sample[c]->m_radians[i * 3 + 2]);
+            // calculate rotation matrix
+
+            glm::quat q = glm::quat(rad);
+            // store the rotation matrix in ssbo
+            glm::mat4 rotationMatrix = glm::toMat4(q);
+
+            //instance[preNumSample + i].position = position;
+            //instance[preNumSample + i].modelMat = rotationMatrix;
+            instance[(preNumSample + i) * 20 + 0] = position.x;
+            instance[(preNumSample + i) * 20 + 1] = position.y;
+            instance[(preNumSample + i) * 20 + 2] = position.z;
+            instance[(preNumSample + i) * 20 + 3] = c;
+            // store the rotation matrix in ssbo
+            for (int r = 0; r < 16; r++) {
+                instance[(preNumSample + i) * 20 + 4 + r] = rotationMatrix[r / 4][r % 4];
+            }
         }
-        preNumSample = preNumSample + spatialSample[c]->numSample();
+        preNumSample = preNumSample + sample[c]->m_numSample;
     }
+
     // SSBO
     glGenBuffers(1, &wholeDataBufferHandle);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, wholeDataBufferHandle);
-    glBufferStorage(GL_SHADER_STORAGE_BUFFER, numSample * 4 * sizeof(float), instanceOffset, GL_MAP_READ_BIT);
+    glBufferStorage(GL_SHADER_STORAGE_BUFFER, numSample * 20 * sizeof(float),instance, GL_MAP_READ_BIT);
 
     // visible SSBO
     glGenBuffers(1, &visibleDataBufferHandle);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, visibleDataBufferHandle);
-    glBufferStorage(GL_SHADER_STORAGE_BUFFER, numSample * 4 * sizeof(float), nullptr, GL_MAP_READ_BIT);
+    glBufferStorage(GL_SHADER_STORAGE_BUFFER, numSample * sizeof(unsigned  int), nullptr, GL_MAP_READ_BIT);
+
+    /*
+    0 num vertices : 641
+      num faces : 814
+    1 num vertices : 999
+      num faces : 546
+    2 num vertices : 1119
+      num faces : 880
+    3 num vertices : 858
+      num faces : 462
+    4 num vertices : 1314
+      num faces : 714
+     */
 
     // Draw Command
     DrawCommand drawCommands[5];
-    drawCommands[0].count = 2442;
+    drawCommands[0].count = 814 * 3;
     drawCommands[0].instanceCount = 0;
     drawCommands[0].firstIndex = 0;
     drawCommands[0].baseVertex = 0;
     drawCommands[0].baseInstance = 0;
 
-    drawCommands[1].count = 1638;
+    drawCommands[1].count = 546 * 3;
     drawCommands[1].instanceCount = 0;
-    drawCommands[1].firstIndex = 2442;
+    drawCommands[1].firstIndex = drawCommands[0].count;
     drawCommands[1].baseVertex = 641;
-    drawCommands[1].baseInstance = spatialSample[0]->numSample();
+    drawCommands[1].baseInstance = sample[0]->m_numSample;
 
-
-    drawCommands[2].count = 2640;
+    drawCommands[2].count = 880 * 3;
     drawCommands[2].instanceCount = 0;
-    drawCommands[2].firstIndex = 2442 + 1638;
+    drawCommands[2].firstIndex = drawCommands[0].count + drawCommands[1].count;
     drawCommands[2].baseVertex = 999 + 641;
-    drawCommands[2].baseInstance = spatialSample[0]->numSample() + spatialSample[1]->numSample();
+    drawCommands[2].baseInstance = sample[0]->m_numSample + sample[1]->m_numSample;
+
+    drawCommands[3].count = 462 * 3;
+    drawCommands[3].instanceCount = 0;
+    drawCommands[3].firstIndex = drawCommands[0].count + drawCommands[1].count + drawCommands[2].count;
+    drawCommands[3].baseVertex = 1119 + 999 + 641;
+    drawCommands[3].baseInstance = sample[0]->m_numSample + sample[1]->m_numSample + sample[2]->m_numSample;
+
+    drawCommands[4].count = 714 * 3;
+    drawCommands[4].instanceCount = 0;
+    drawCommands[4].firstIndex = drawCommands[0].count + drawCommands[1].count + drawCommands[2].count + drawCommands[3].count;
+    drawCommands[4].baseVertex = 858 + 1119 + 999 + 641;
+    drawCommands[4].baseInstance = sample[0]->m_numSample + sample[1]->m_numSample + sample[2]->m_numSample + sample[3]->m_numSample;
+
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmdBufferHandle);
+
+    glGenBuffers(1, &cmdBufferHandle);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cmdBufferHandle);
+    glNamedBufferStorage(cmdBufferHandle, sizeof(drawCommands), drawCommands, GL_MAP_READ_BIT);
 }
 
 void loadTexture() {
 
 	// load magic rock
 	std::string texturePath = "assets\\MagicRock\\StylMagicRocks_AlbedoTransparency.png";
-	//std::string texturePath = "assets\\bush01.png";
 	int width, height, nrChannels;
 	unsigned char *data = stbi_load(texturePath.c_str(), &width, &height, &nrChannels, 0);
 	if (data != nullptr) {
@@ -460,7 +666,58 @@ void loadTexture() {
 
 	// ===========================================
     // load grass texture
+    const int NUM_TEXTURE = 5;
+    const int IMG_WIDTH = 1024;
+    const int IMG_HEIGHT = 1024;
+    const int IMG_CHANNEL = 4;
+    unsigned char *textureArrayData = new unsigned char[IMG_WIDTH * IMG_HEIGHT * IMG_CHANNEL * NUM_TEXTURE];
+    // merge the texture into one array
+    std::string texture_paths[NUM_TEXTURE] = {
+            "assets\\grassB_albedo.png",
+            "assets\\bush01.png",
+            "assets\\bush05.png",
+            "assets\\Medieval_Building_LowPoly\\Medieval_Building_LowPoly_V1_Albedo_small.png",
+            "assets\\Medieval_Building_LowPoly\\Medieval_Building_LowPoly_V2_Albedo_small.png"
+    };
 
+    for (int i = 0; i < NUM_TEXTURE; i++) {
+        std::string fileName = texture_paths[i];
+        int width, height, channel;
+        unsigned char *data = stbi_load(fileName.c_str(), &width, &height, &channel, 0);
+        if (data == nullptr) {
+            std::cout << "failed to load texture\n";
+            std::cout << "file name : " << fileName << "\n";
+            return;
+        }
+        memcpy(textureArrayData + i * IMG_WIDTH * IMG_HEIGHT * IMG_CHANNEL, data, IMG_WIDTH * IMG_HEIGHT * IMG_CHANNEL);
+        stbi_image_free(data);
+    }
+    // create texture array
+    GLuint textureArray;
+    glGenTextures(1, &textureArray);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);
+
+    // the internal format for glTexStorageXD must be "Sized Internal Formats“
+    // max mipmap level = log2(1024) + 1 = 11
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 11, GL_RGBA8, IMG_WIDTH, IMG_HEIGHT, NUM_TEXTURE);
+    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, IMG_WIDTH, IMG_HEIGHT, NUM_TEXTURE, GL_RGBA, GL_UNSIGNED_BYTE,
+                    textureArrayData);
+
+    // set the texture parameters
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    // Mipmap
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+
+    // set the texture unit
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);
+
+    // release memory
+    delete[] textureArrayData;
 }
 
 void compileShaderProgram() {
@@ -506,6 +763,57 @@ void compileShaderProgram() {
 		return;
 	}
 	airplaneShaderProgram->linkProgram();
+
+    // indirect render shader
+    indirectRenderShaderProgram = new ShaderProgram();
+    indirectRenderShaderProgram->init();
+
+    // vertex shader
+    vsShader = new Shader(GL_VERTEX_SHADER);
+    vsShader->createShaderFromFile("src\\shader\\indirectRender.vs.glsl");
+
+    // fragment shader
+    fsShader = new Shader(GL_FRAGMENT_SHADER);
+    fsShader->createShaderFromFile("src\\shader\\indirectRender.fs.glsl");
+
+    indirectRenderShaderProgram->attachShader(vsShader);
+    indirectRenderShaderProgram->attachShader(fsShader);
+    indirectRenderShaderProgram->checkStatus();
+    if (indirectRenderShaderProgram->status() != ShaderProgramStatus::READY) {
+        return;
+    }
+    indirectRenderShaderProgram->linkProgram();
+
+    // ====== computer shader ======
+    // culing shader
+    cullingShaderProgram = new ShaderProgram();
+    cullingShaderProgram->init();
+
+    // compute shader
+    Shader *csShader = new Shader(GL_COMPUTE_SHADER);
+    csShader->createShaderFromFile("src\\shader\\culling.cs.glsl");
+
+    cullingShaderProgram->attachShader(csShader);
+    cullingShaderProgram->checkStatus();
+    if (cullingShaderProgram->status() != ShaderProgramStatus::READY) {
+        return;
+    }
+    cullingShaderProgram->linkProgram();
+
+    // clear shader
+    clearShaderProgram = new ShaderProgram();
+    clearShaderProgram->init();
+
+    // compute shader
+    csShader = new Shader(GL_COMPUTE_SHADER);
+    csShader->createShaderFromFile("src\\shader\\clear.cs.glsl");
+
+    clearShaderProgram->attachShader(csShader);
+    clearShaderProgram->checkStatus();
+    if (clearShaderProgram->status() != ShaderProgramStatus::READY) {
+        return;
+    }
+    clearShaderProgram->linkProgram();
 }
 
 void resizeGL(GLFWwindow *window, int w, int h){
@@ -516,7 +824,6 @@ void resizeGL(GLFWwindow *window, int w, int h){
 // ==============================================
 
 void drawMagicRock() {
-
 	// shader program
 	magicRockShaderProgram->useProgram();
 
@@ -610,6 +917,46 @@ void drawAirplane() {
 	glDrawElements(GL_TRIANGLES, airplane.drawCount, GL_UNSIGNED_INT, nullptr);
 }
 
+void drawIndirectRender() {
+    // shader
+    indirectRenderShaderProgram->useProgram();
+
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmdBufferHandle);
+
+    const glm::ivec4 playerViewport = m_myCameraManager->playerViewport();
+    const glm::ivec4 godViewport = m_myCameraManager->godViewport();
+
+    GLuint programId = indirectRenderShaderProgram->programId();
+
+    // pass uniform
+    glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
+    glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, false, glm::value_ptr(viewMat));
+    glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, false, glm::value_ptr(projMat));
+
+    // set viewport to player viewport
+    defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 5, 0);
+
+    // ------------------------------------
+    // god viewport
+
+    // pass uniform
+    viewMat = m_myCameraManager->godViewMatrix();
+    projMat = m_myCameraManager->godProjectionMatrix();
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMat));
+    glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, GL_FALSE, glm::value_ptr(projMat));
+
+    // set viewport to god viewport
+    defaultRenderer->setViewport(godViewport[0], godViewport[1], godViewport[2], godViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 5, 0);
+
+    // unbind
+    glBindVertexArray(0);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+}
 
 void paintGL() {
 	// update cameras and airplane
@@ -649,6 +996,11 @@ void paintGL() {
 	// =============================================
 
 	// =============================================
+
+    // bind gbuffers
+    //glBindFramebuffer(GL_FRAMEBUFFER, gbuffer);
+    //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 	// start rendering
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
@@ -674,6 +1026,30 @@ void paintGL() {
 	drawMagicRock();
 	drawAirplane();
 
+    computeDrawCommands();
+    drawIndirectRender();
+
+    // draw frame buffer
+    //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // draw gbuffer
+    //glUseProgram(gbufferShaderProgram);
+    //glBindVertexArray(gbufferVAO);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[0]); // diffuse
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[1]); // normal
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[2]); // coord
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, gbufferTex[3]); // depth
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+
+
 	// =============================================
 
 	ImGui::Begin("My name is window");
@@ -683,6 +1059,54 @@ void paintGL() {
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
+
+void computeDrawCommands() {
+    // unbind buffer
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+
+
+    // clear buffer
+    clearShaderProgram->useProgram();
+    glDispatchCompute(1, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // culling shader
+    cullingShaderProgram->useProgram();
+    // pass camera position
+    glm::vec3 cameraPosition = m_myCameraManager->playerCameraLookCenter();
+    glm::vec3 lookCenter = m_myCameraManager->playerCameraLookCenter();
+    glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
+    glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
+    glm::mat4 viewProjMat = projMat * viewMat;
+
+    GLuint programId = cullingShaderProgram->programId();
+    // std::cout << cameraPosition.x << " " << cameraPosition.y << " " << cameraPosition.z << "\n";
+
+    glUniform3fv(glGetUniformLocation(programId, "cameraPos"), 1, glm::value_ptr(cameraPosition));
+    glUniform3fv(glGetUniformLocation(programId, "lookCenter"), 1, glm::value_ptr(lookCenter));
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
+
+    glDispatchCompute(571641, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    return;
+    // get draw commands from cmd buffer
+    void *cmd_data = malloc(sizeof(DrawCommand) * 5);
+    glGetNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, cmd_data);
+
+    // output draw commands to screen
+    DrawCommand *drawCommands = (DrawCommand *) cmd_data;
+    for (int i = 0; i < 5; i++) {
+        std::cout << "draw command " << i << "\n";
+        //std::cout << "count : " << drawCommands[i].count << "\n";
+        std::cout << "instanceCount : " << drawCommands[i].instanceCount << "\n";
+        //std::cout << "firstIndex : " << drawCommands[i].firstIndex << "\n";
+        //std::cout << "baseVertex : " << drawCommands[i].baseVertex << "\n";
+        std::cout << "baseInstance : " << drawCommands[i].baseInstance << "\n\n";
+    }
+    free(cmd_data);
+}
+
 
 ////////////////////////////////////////////////
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods){

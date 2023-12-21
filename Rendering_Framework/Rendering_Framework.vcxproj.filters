@@ -161,10 +161,24 @@
     <ClInclude Include="src\camera\MyOrbitControl.h">
       <Filter>Header Files\camera</Filter>
     </ClInclude>
+    <ClInclude Include="src\SpatialSample.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="imgui.ini" />
     <None Include="src\shader\oglFragmentShader.glsl" />
     <None Include="src\shader\oglVertexShader.glsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="assets\MagicRock\StylMagicRocks_AlbedoTransparency.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="assets\MagicRock\StylMagicRocks_NormalOpenGL.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="assets\MagicRock\StylMagicRocks_AlbedoTransparency_c.png">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>

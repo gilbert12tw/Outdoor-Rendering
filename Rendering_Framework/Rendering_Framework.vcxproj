@@ -58,6 +58,7 @@
     <ClInclude Include="src\SceneManager.h" />
     <ClInclude Include="src\SceneRenderer.h" />
     <ClInclude Include="src\Shader.h" />
+    <ClInclude Include="src\SpatialSample.h" />
     <ClInclude Include="src\terrain\MyTerrain.h" />
     <ClInclude Include="src\terrain\MyTerrainData.h" />
     <ClInclude Include="src\terrain\MyViewFrustum.h" />
@@ -68,6 +69,11 @@
     <None Include="imgui.ini" />
     <None Include="src\shader\oglFragmentShader.glsl" />
     <None Include="src\shader\oglVertexShader.glsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="assets\MagicRock\StylMagicRocks_AlbedoTransparency.png" />
+    <Image Include="assets\MagicRock\StylMagicRocks_AlbedoTransparency_c.png" />
+    <Image Include="assets\MagicRock\StylMagicRocks_NormalOpenGL.png" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{ADA5FF44-3FBE-44D5-94ED-FFD82E3DF373}</ProjectGuid>
