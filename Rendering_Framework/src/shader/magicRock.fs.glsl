@@ -36,8 +36,8 @@ void main() {
 	}
 
 	color0 = texel;
-	color1 = vec4(normal, 1.0);
-	color2 = vec4(world_pos, 1.0);
+	color1 = vec4(normal, 1.0);    // w -> hi-z culling
+	color2 = vec4(world_pos, 1.0); // w -> specular
 
 	//fragColor = vec4(pow(diffuse + specular + ambient, vec3(0.5)), 1.0);
 	// fragColor = vec4(N, 1.0);

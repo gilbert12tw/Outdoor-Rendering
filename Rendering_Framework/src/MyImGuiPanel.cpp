@@ -63,6 +63,9 @@ void MyImGuiPanel::update() {
     if (ImGui::Button("Specular")) {
         gBufferIdx = 4;
     }
+    if (ImGui::Button("Depth")) {
+        gBufferIdx = 6;
+    }
 }
 
 int MyImGuiPanel::getTeleportIdx() {

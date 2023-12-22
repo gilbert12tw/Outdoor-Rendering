@@ -1070,6 +1070,7 @@ void paintGL() {
     glUniform1i(glGetUniformLocation(programId,"diffuse_map"), 0);
     glUniform1i(glGetUniformLocation(programId,"normal_map"), 1);
     glUniform1i(glGetUniformLocation(programId,"position_map"), 2);
+    glUniform1i(glGetUniformLocation(programId,"depth_map"), 3);
 
     // set viewport to all
     defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);

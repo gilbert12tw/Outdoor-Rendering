@@ -4,6 +4,7 @@ layout (location = 0) out vec4 fragColor;
 layout (location = 0) uniform sampler2D diffuse_map; //Diffuse map
 layout (location = 1) uniform sampler2D normal_map; //Normal map
 layout (location = 2) uniform sampler2D position_map; //Coordinat
+layout (location = 3) uniform sampler2D depth_map; // Depth
 
 uniform vec3 eye_position;
 uniform int gbuffer_mode;
@@ -33,6 +34,14 @@ void main(void)
     }
     else if (gbuffer_mode == 3) {
         fragColor = vec4(diffuse, 1.0);
+        return;
+    }
+    else if (gbuffer_mode == 6) {
+        float depth = texelFetch(depth_map, ivec2(gl_FragCoord.xy), 0).x;
+        float near = 0.1;
+        float far = 500.0;
+        depth = (2.0 * near) / (far + near - depth * (far - near));
+        fragColor = vec4(depth, depth, depth, 1.0);
         return;
     }
 

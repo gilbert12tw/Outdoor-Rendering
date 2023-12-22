@@ -43,8 +43,8 @@ void pureColor(){
 }
 
 void main(){
-	color1 = vec4(f_worldNormal, 0.0);
-	color2 = vec4(f_worldVertex, 0.0);
+	color1 = vec4(f_worldNormal, 1.0); // w -> hi-z culling
+	color2 = vec4(f_worldVertex, 0.0); // w -> specular
 	if(pixelProcessId == 5){
 		pureColor() ;
 	}

@@ -23,8 +23,12 @@ void main() {
     }
 
     color0 = vec4(texel.xyz, 1.0);
-    color1 = vec4(normalize(normal), 1.0);
-    color2 = vec4(worldPosition, 0.0);
+    if (uv_coord.z >= 3.0) { // bulding
+        color1 = vec4(normalize(normal), 1.0); // w -> hi-z culling
+    } else {
+        color1 = vec4(normalize(normal), 0.0);
+    }
+    color2 = vec4(worldPosition, 0.0); // w -> specular
 
     /*
     vec3 V = normalize(viewDirection);
