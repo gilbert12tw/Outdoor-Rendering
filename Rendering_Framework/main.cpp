@@ -217,7 +217,6 @@ void vsyncDisabled(GLFWwindow *window) {
 			previousTimeForFPS = currentTime;
 		}			
 
-
         processBtnInput();
 
 		glfwPollEvents();
@@ -380,7 +379,8 @@ void setUpGbuffer() {
     // for depth
     glGenTextures(1, &hiz.depth_map);
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
-    glTexStorage2D(GL_TEXTURE_2D, 12, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+    //glTexStorage2D(GL_TEXTURE_2D, 12, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
     // mip map (Hi-z)
@@ -1002,6 +1002,53 @@ void drawAirplane() {
 	glDrawElements(GL_TRIANGLES, airplane.drawCount, GL_UNSIGNED_INT, nullptr);
 }
 
+void drawBuilding() {
+    indirectRenderShaderProgram->useProgram();
+
+    void *cmd_data = malloc(sizeof(DrawCommand) * 5);
+    glGetNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, cmd_data);
+
+    // pass first two draw command to indirect render shader
+    glNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, nullptr);
+    //glNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 2, cmd_data);
+
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmdBufferHandle);
+
+    const glm::ivec4 playerViewport = m_myCameraManager->playerViewport();
+    const glm::ivec4 godViewport = m_myCameraManager->godViewport();
+
+    GLuint programId = indirectRenderShaderProgram->programId();
+
+    // pass uniform
+    glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
+    glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, false, glm::value_ptr(viewMat));
+    glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, false, glm::value_ptr(projMat));
+
+    // set viewport to player viewport
+    defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 5, 0);
+
+    // ------------------------------------
+    // god viewport
+
+    // pass uniform
+    viewMat = m_myCameraManager->godViewMatrix();
+    projMat = m_myCameraManager->godProjectionMatrix();
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMat));
+    glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, GL_FALSE, glm::value_ptr(projMat));
+
+    // set viewport to god viewport
+    defaultRenderer->setViewport(godViewport[0], godViewport[1], godViewport[2], godViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 5, 0);
+
+    // unbind
+    glBindVertexArray(0);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+}
+
 void drawIndirectRender() {
     // shader
     indirectRenderShaderProgram->useProgram();
@@ -1021,8 +1068,6 @@ void drawIndirectRender() {
 
     void *cmd_data = malloc(sizeof(DrawCommand) * 5);
     glGetNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, cmd_data);
-
-    // TODO draw two times
 
     // set viewport to player viewport
     defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
@@ -1139,7 +1184,11 @@ void paintGL() {
     glUniform1i(glGetUniformLocation(hizShaderProgram->programId(), "depth_map"), 0);
     glBindVertexArray(hiz.vao);
     // view port to player viewport
-    defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+    //defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+
+    // view port to all
+    defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glDepthFunc(GL_LEQUAL);
 
@@ -1440,7 +1489,7 @@ void resize(const int w, const int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
-    glTexStorage2D(GL_TEXTURE_2D,12,GL_DEPTH_COMPONENT32F, w, h);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glGenerateMipmap(GL_TEXTURE_2D);

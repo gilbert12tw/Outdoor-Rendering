@@ -44,6 +44,7 @@ float radius;
 // TODO: not working now
 bool HizCulling(vec4 position){
     if (type >= 3) return true;
+    return true;
     vec4 pos = viewProjMat * vec4(position.xyz, 1.0);
 
     //pos.x += Frame.x / 2;

@@ -17,6 +17,8 @@ const vec3 ambientLight = vec3(0.2, 0.2, 0.2);
 const vec3 diffuseLight = vec3(0.64, 0.64, 0.64);
 const vec3 specularLight = vec3(0.16, 0.16, 0.16);
 
+in vec2 TexCoord;
+
 void main(void)
 {
     vec3 diffuse = texelFetch(diffuse_map, ivec2(gl_FragCoord.xy), 0).rgb;
@@ -66,9 +68,7 @@ void main(void)
         fragColor = vec4(pow(diffuse_color + specular_color + ambient_color, vec3(0.5)), 1.0);
     } else if (gbuffer_mode == 6) {
         int level = depthLevel;
-        int pw = (1 << level);
-        ivec2 coord = ivec2(gl_FragCoord.xy) / pw;
-        float depth = texelFetch(depth_map, coord, level).x;
+        float depth = textureLod(depth_map, TexCoord, level).r;
         float near = 0.1;
         float far = 500.0;
         depth = (2.0 * near) / (far + near - depth * (far - near));
