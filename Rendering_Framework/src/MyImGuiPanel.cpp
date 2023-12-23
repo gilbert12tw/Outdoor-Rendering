@@ -63,8 +63,49 @@ void MyImGuiPanel::update() {
     if (ImGui::Button("Specular")) {
         gBufferIdx = 4;
     }
-    if (ImGui::Button("Depth")) {
+    if (ImGui::Button("Depth 0")) {
         gBufferIdx = 6;
+        depthLevel = 0;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 1")) {
+        gBufferIdx = 6;
+        depthLevel = 1;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 2")) {
+        gBufferIdx = 6;
+        depthLevel = 2;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 3")) {
+        gBufferIdx = 6;
+        depthLevel = 3;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 4")) {
+        gBufferIdx = 6;
+        depthLevel = 4;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 5")) {
+        gBufferIdx = 6;
+        depthLevel = 5;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 6")) {
+        gBufferIdx = 6;
+        depthLevel = 6;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 7")) {
+        gBufferIdx = 6;
+        depthLevel = 7;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Depth 8")) {
+        gBufferIdx = 6;
+        depthLevel = 8;
     }
 }
 

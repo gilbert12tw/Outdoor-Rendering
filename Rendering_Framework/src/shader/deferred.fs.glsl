@@ -8,6 +8,8 @@ layout (location = 3) uniform sampler2D depth_map; // Depth
 
 uniform vec3 eye_position;
 uniform int gbuffer_mode;
+uniform int depthLevel;
+uniform int frame_width;
 
 const vec3 lightDirection_world = vec3(0.4, 0.5, 0.8);
 
@@ -17,12 +19,18 @@ const vec3 specularLight = vec3(0.16, 0.16, 0.16);
 
 void main(void)
 {
-    //fragColor = vec4(1.0, 0, 0, 1);
-    //fragColor = texelFetch(ivec2(gl_FragCoord.xy), diffuse_map);
     vec3 diffuse = texelFetch(diffuse_map, ivec2(gl_FragCoord.xy), 0).rgb;
     vec3 normal = texelFetch(normal_map, ivec2(gl_FragCoord.xy), 0).rgb;
     vec3 position = texelFetch(position_map, ivec2(gl_FragCoord.xy), 0).rgb;
     float specular = texelFetch(position_map, ivec2(gl_FragCoord.xy), 0).w;
+    /*
+    if (gbuffer_mode == 6 && gl_FragCoord.x < frame_width / 2) {
+        diffuse = texelFetch(diffuse_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).rgb;
+        normal = texelFetch(normal_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).rgb;
+        position = texelFetch(position_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).rgb;
+        specular = texelFetch(position_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).w;
+    }
+    */
 
     if (gbuffer_mode == 1) {
         fragColor = vec4(normalize(position) * 0.5 + 0.5, 1.0);
@@ -34,14 +42,6 @@ void main(void)
     }
     else if (gbuffer_mode == 3) {
         fragColor = vec4(diffuse, 1.0);
-        return;
-    }
-    else if (gbuffer_mode == 6) {
-        float depth = texelFetch(depth_map, ivec2(gl_FragCoord.xy), 0).x;
-        float near = 0.1;
-        float far = 500.0;
-        depth = (2.0 * near) / (far + near - depth * (far - near));
-        fragColor = vec4(depth, depth, depth, 1.0);
         return;
     }
 
@@ -64,5 +64,15 @@ void main(void)
             fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     } else if (gbuffer_mode == 5) {
         fragColor = vec4(pow(diffuse_color + specular_color + ambient_color, vec3(0.5)), 1.0);
+    } else if (gbuffer_mode == 6) {
+        int level = depthLevel;
+        int pw = (1 << level);
+        ivec2 coord = ivec2(gl_FragCoord.xy) / pw;
+        float depth = texelFetch(depth_map, coord, level).x;
+        float near = 0.1;
+        float far = 500.0;
+        depth = (2.0 * near) / (far + near - depth * (far - near));
+        fragColor = vec4(depth, depth, depth, 1.0);
+        return;
     }
 }

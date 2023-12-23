@@ -60,6 +60,22 @@ struct DrawCommand {
 	GLuint baseInstance;
 };
 
+struct {
+    GLuint fbo;
+    GLuint position_map;
+    GLuint normal_map;
+    GLuint diffuse_map;
+    GLuint depth_map;
+    GLuint vao;
+} gbuffer;
+
+struct {
+    GLuint fbo;
+    GLuint depth_map;
+    GLuint vao;
+    GLuint vbo;
+} hiz;
+
 // loading
 void loadModel(Shape &modelShape, std::string modelPath, int hasTangent);
 void loadTexture();
@@ -73,6 +89,8 @@ void compileShaderProgram();
 void drawMagicRock();
 void drawAirplane();
 void drawIndirectRender();
+
+void genHizMap();
 
 void processBtnInput();
 
@@ -105,24 +123,22 @@ ShaderProgram* indirectRenderShaderProgram;
 
 ShaderProgram* cullingShaderProgram, *clearShaderProgram;
 
-// Gbuffer
-// vao
-GLuint gbufferVAO;
 // shader program
 ShaderProgram* gbufferShaderProgram;
+
+ShaderProgram* hizShaderProgram;
+ShaderProgram* hizMipMapShaderProgram;
 
 // ==============================================
 
 // SSBO handle
 GLuint wholeDataBufferHandle, visibleDataBufferHandle, cmdBufferHandle;
 
-// Gbuffer handle
-GLuint gbuffer, gbufferTex[4];
-
 // ==============================================
 // uniform variable
 bool normalMaping;
 int gBufferIdx = 5;
+int depthLevel = 0;
 
 int main(){
 	glfwInit();
@@ -291,43 +307,47 @@ bool initializeGL(){
 }
 
 void setUpGbuffer() {
-    glGenFramebuffers(1, &gbuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer);
+    glGenFramebuffers(1, &gbuffer.fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer.fbo);
 
-    glGenTextures(4, gbufferTex);
     // for diffuse
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[0]);
+    glGenTextures(1, &gbuffer.diffuse_map);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, FRAME_WIDTH, FRAME_HEIGHT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for normal
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[1]);
+    glGenTextures(1, &gbuffer.normal_map);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.normal_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for coordinate
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[2]);
+    glGenTextures(1, &gbuffer.position_map);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.position_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for depth
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[3]);
+    glGenTextures(1, &gbuffer.depth_map);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
+
     // attach texture to framebuffer
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, gbufferTex[0], 0);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, gbufferTex[1], 0);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, gbufferTex[2], 0);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, gbufferTex[3], 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gbuffer.diffuse_map, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gbuffer.normal_map, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gbuffer.position_map, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gbuffer.depth_map, 0);
 
     // vao
-    glGenVertexArrays(1, &gbufferVAO);
-    glBindVertexArray(gbufferVAO);
+    glGenVertexArrays(1, &gbuffer.vao);
+    glBindVertexArray(gbuffer.vao);
 
     // vbo
     GLuint gbufferVBO;
@@ -336,14 +356,47 @@ void setUpGbuffer() {
 
     // vertex
     float verts[18] = {
-            -1.0, -1.0, 0.0,
-            1.0, -1.0, 0.0,
-            -1.0, 1.0, 0.0,
+            -1.0, -1.0, 0.5,
+            1.0, -1.0, 0.5,
+            -1.0, 1.0, 0.5,
 
-            -1.0, 1.0, 0.0,
-            1.0, -1.0, 0.0,
-            1.0, 1.0, 0.0
+            -1.0, 1.0, 0.5,
+            1.0, -1.0, 0.5,
+            1.0, 1.0, 0.5
+
     };
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    glBindVertexArray(0);
+
+
+    // for Hi-z
+    glGenFramebuffers(1, &hiz.fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, hiz.fbo);
+
+    // for depth
+    glGenTextures(1, &hiz.depth_map);
+    glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
+    glTexStorage2D(GL_TEXTURE_2D, 12, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+    // mip map (Hi-z)
+    glGenerateMipmap(GL_TEXTURE_2D);
+    //genHizMap();
+
+    // attach texture to framebuffer
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, hiz.depth_map, 0);
+
+    // vao
+    glGenVertexArrays(1, &hiz.vao);
+    glBindVertexArray(hiz.vao);
+
+    // vbo
+    glGenBuffers(1, &hiz.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, hiz.vbo);
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
@@ -400,7 +453,6 @@ void loadModel(Shape &modelShape, std::string modelPath, int hasTangent) {
 		glEnableVertexAttribArray(3);
 		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 	}
-	
 
 	// index
 	glGenBuffers(1, &modelShape.ibo);
@@ -756,7 +808,7 @@ void loadTexture() {
 }
 
 void compileShaderProgram() {
-    auto createShaderProgram = [](std::string vs_path, std::string fs_path) -> ShaderProgram* {
+    auto createShaderProgram = [](std::string vs_path, std::string fs_path, std::string gs_path = "") -> ShaderProgram* {
         ShaderProgram* shaderProgram = new ShaderProgram();
         shaderProgram->init();
 
@@ -768,8 +820,18 @@ void compileShaderProgram() {
         Shader* fsShader = new Shader(GL_FRAGMENT_SHADER);
         fsShader->createShaderFromFile(fs_path);
 
+        // geometry shader
+        Shader* gsShader = nullptr;
+        if (gs_path != "") {
+            gsShader = new Shader(GL_GEOMETRY_SHADER);
+            gsShader->createShaderFromFile(gs_path);
+        }
+
         shaderProgram->attachShader(vsShader);
         shaderProgram->attachShader(fsShader);
+        if (gsShader != nullptr) {
+            shaderProgram->attachShader(gsShader);
+        }
         shaderProgram->checkStatus();
         if (shaderProgram->status() != ShaderProgramStatus::READY) {
             return nullptr;
@@ -778,6 +840,9 @@ void compileShaderProgram() {
 
         vsShader->releaseShader();
         fsShader->releaseShader();
+        if (gsShader != nullptr) {
+            gsShader->releaseShader();
+        }
 
         return shaderProgram;
     };
@@ -793,6 +858,13 @@ void compileShaderProgram() {
 
     // gbuffer shader
     gbufferShaderProgram = createShaderProgram("src\\shader\\deferred.vs.glsl", "src\\shader\\deferred.fs.glsl");
+
+    // hiz fbo shadder
+    hizShaderProgram = createShaderProgram("src\\shader\\flushdepth.vs.glsl", "src\\shader\\flushdepth.fs.glsl");
+
+    // hiz mip map shader
+    //hizMipMapShaderProgram = createShaderProgram("src\\shader\\hizMipMap.vs.glsl", "src\\shader\\hizMipMap.fs.glsl", "src\\shader\\hizMipMap.gs.glsl");
+    hizMipMapShaderProgram = createShaderProgram("src\\shader\\hizMipMap.vs.glsl", "src\\shader\\hizMipMap.fs.glsl");
 
     // ====== computer shader =============================
     // culling shader
@@ -947,6 +1019,11 @@ void drawIndirectRender() {
     glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, false, glm::value_ptr(viewMat));
     glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, false, glm::value_ptr(projMat));
 
+    void *cmd_data = malloc(sizeof(DrawCommand) * 5);
+    glGetNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, cmd_data);
+
+    // TODO draw two times
+
     // set viewport to player viewport
     defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
     glBindVertexArray(mergeObject.vao);
@@ -972,6 +1049,7 @@ void drawIndirectRender() {
 }
 
 void paintGL() {
+
 	// update cameras and airplane
 	// god camera
 	m_myCameraManager->updateGodCamera();
@@ -1008,15 +1086,6 @@ void paintGL() {
 	m_terrain->updateState(playerVM, playerViewOrg, playerProjMat, nullptr);
 	// =============================================
 
-	// =============================================
-
-    //  =======================  bind gbuffers
-    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer);
-    const GLenum gbufferAttachments[] = {GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2 };
-    glDrawBuffers(3, gbufferAttachments);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    // =============================================
-
 	// start rendering
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
@@ -1026,7 +1095,16 @@ void paintGL() {
 	defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
 	defaultRenderer->startNewFrame();
 
-	// rendering with player view		
+    //  =======================  bind frame buffer =======================
+
+    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer.fbo);
+    const GLenum gbufferAttachments[] = {GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2 , GL_COLOR_ATTACHMENT3};
+    glDrawBuffers(4, gbufferAttachments);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // =============================================
+
+	// rendering with player view
 	defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
 	defaultRenderer->setView(playerVM);
 	defaultRenderer->setProjection(playerProjMat);
@@ -1037,15 +1115,48 @@ void paintGL() {
 	defaultRenderer->setView(godVM);
 	defaultRenderer->setProjection(godProjMat);
 	defaultRenderer->renderPass();
+
 	// ===============================
 
 	drawMagicRock();
 	drawAirplane();
 
+    // ========= flush depth buffer to hiz map =========
+
+    // bind hiz fbo
+    glBindFramebuffer(GL_FRAMEBUFFER, hiz.fbo);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    glDepthFunc(GL_ALWAYS);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    // attach depth map
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, hiz.depth_map, 0);
+
+    // draw hiz
+    hizShaderProgram->useProgram();
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map); // depth
+    // uniform
+    glUniform1i(glGetUniformLocation(hizShaderProgram->programId(), "depth_map"), 0);
+    glBindVertexArray(hiz.vao);
+    // view port to player viewport
+    defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDepthFunc(GL_LEQUAL);
+
+    genHizMap();
     computeDrawCommands();
+
+    // =============================================
+
+    // rebind gbuffer fbo
+    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer.fbo);
+    glDrawBuffers(4, gbufferAttachments);
+    glEnable(GL_DEPTH_TEST);
+
     drawIndirectRender();
 
     // ================= draw frame buffer ====================
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1054,17 +1165,20 @@ void paintGL() {
     gbufferShaderProgram->useProgram();
     int programId = gbufferShaderProgram->programId();
     glm::vec3 eyePos = m_myCameraManager->playerViewOrig();
+    glUniform1i(glGetUniformLocation(programId, "frame_width"), FRAME_WIDTH);
     glUniform1i(glGetUniformLocation(programId, "gbuffer_mode"), gBufferIdx);
+    glUniform1i(glGetUniformLocation(programId, "depthLevel"), depthLevel);
     glUniform3fv(glGetUniformLocation(programId, "eye_position"), 1, glm::value_ptr(eyePos));
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[0]); // diffuse
+    glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map); // diffuse
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[1]); // normal
+    glBindTexture(GL_TEXTURE_2D, gbuffer.normal_map);  // normal
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[2]); // coord
+    glBindTexture(GL_TEXTURE_2D, gbuffer.position_map); // coord
     glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[3]); // depth
+    //glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map); // depth
+    glBindTexture(GL_TEXTURE_2D, hiz.depth_map); // depth
 
     // texture
     glUniform1i(glGetUniformLocation(programId,"diffuse_map"), 0);
@@ -1075,7 +1189,7 @@ void paintGL() {
     // set viewport to all
     defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
 
-    glBindVertexArray(gbufferVAO);
+    glBindVertexArray(gbuffer.vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);
 
 	// =============================================
@@ -1086,6 +1200,50 @@ void paintGL() {
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void genHizMap() {
+    // bind hiz fbo
+    glBindFramebuffer(GL_FRAMEBUFFER, hiz.fbo);
+
+    hizMipMapShaderProgram->useProgram();
+    // disable color buffer as we will render only a depth image
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
+    // we have to disable depth testing but allow depth writes
+    glDepthFunc(GL_ALWAYS);
+    // calculate the number of mipmap levels for NPOT texture
+    int numLevels = 1 + (int)floorf(log2f(fmaxf(FRAME_WIDTH, FRAME_HEIGHT)));
+    int currentWidth = FRAME_WIDTH;
+    int currentHeight = FRAME_HEIGHT;
+    GLuint programId = hizMipMapShaderProgram->programId();
+    glUniform1i(glGetUniformLocation(programId, "LastMip"), 0);
+    for (int i=1; i<numLevels; i++) {
+        glUniform2i(glGetUniformLocation(programId, "LastMipSize"), currentWidth, currentHeight);
+        // calculate next viewport size
+        currentWidth /= 2;
+        currentHeight /= 2;
+        // ensure that the viewport size is always at least 1x1
+        currentWidth = currentWidth > 0 ? currentWidth : 1;
+        currentHeight = currentHeight > 0 ? currentHeight : 1;
+        glViewport(0, 0, currentWidth, currentHeight);
+        // bind next level for rendering but first restrict fetches only to previous level
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, i-1);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, i-1);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, hiz.depth_map, i);
+        // clear
+        //glClear(GL_DEPTH_BUFFER_BIT);
+        glBindVertexArray(hiz.vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);
+    }
+    // reset mipmap level range for the depth image
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, numLevels-1);
+    // reenable color buffer writes, reset viewport and reenable depth test
+    glDepthFunc(GL_LEQUAL);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
 }
 
 void computeDrawCommands() {
@@ -1106,13 +1264,26 @@ void computeDrawCommands() {
     glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
     glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
     glm::mat4 viewProjMat = projMat * viewMat;
+    glm::vec4 playerViewport = m_myCameraManager->playerViewport();
 
     GLuint programId = cullingShaderProgram->programId();
     // std::cout << cameraPosition.x << " " << cameraPosition.y << " " << cameraPosition.z << "\n";
 
+    // texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, hiz.depth_map); // depth
+    glUniform1i(glGetUniformLocation(programId, "depth_map"), 0);
+
+    glUniform4fv(glGetUniformLocation(programId, "viewPort"), 1, glm::value_ptr(playerViewport));
     glUniform3fv(glGetUniformLocation(programId, "cameraPos"), 1, glm::value_ptr(cameraPosition));
     glUniform3fv(glGetUniformLocation(programId, "lookCenter"), 1, glm::value_ptr(lookCenter));
     glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
+
+    // set viewport to all
+    //defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+
+    // set viewport to player viewport
+    //defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
 
     glDispatchCompute(571641, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -1150,6 +1321,8 @@ void processBtnInput() {
 
     // G-buffer index
     gBufferIdx = m_imguiPanel->getGBufferIdx();
+
+    depthLevel = m_imguiPanel->getDepthLevel();
 }
 
 
@@ -1243,29 +1416,34 @@ void resize(const int w, const int h) {
 
     glViewport(0, 0, w, h);
     // for diffuse
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[0]);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, w, h);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for normal
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[1]);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.normal_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-
     // for coordinate
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[2]);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.position_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for depth
-    glBindTexture(GL_TEXTURE_2D, gbufferTex[3]);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, w, h);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
+    glTexStorage2D(GL_TEXTURE_2D,12,GL_DEPTH_COMPONENT32F, w, h);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenerateMipmap(GL_TEXTURE_2D);
 
 	m_myCameraManager->resize(w, h);
 	defaultRenderer->resize(w, h);

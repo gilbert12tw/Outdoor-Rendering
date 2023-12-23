@@ -40,6 +40,6 @@ void main() {
 	color2 = vec4(world_pos, 1.0); // w -> specular
 
 	//fragColor = vec4(pow(diffuse + specular + ambient, vec3(0.5)), 1.0);
-	// fragColor = vec4(N, 1.0);
+	//fragColor = vec4(N, 1.0);
 	//fragColor = vec4(1.0, 0.0, 0.0, 1.0);
 }

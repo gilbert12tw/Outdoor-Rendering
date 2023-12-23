@@ -19,11 +19,13 @@ public:
 	int getTeleportIdx();
     bool getNormalMapping() { return normalMapping; }
     int getGBufferIdx() { return gBufferIdx; }
+    int getDepthLevel() { return depthLevel; }
 
 private:
 	double m_avgFPS;
 	double m_avgFrameTime;
 	int teleportIdx = -1;
     int gBufferIdx = 5;
+    int depthLevel = 0;
     bool normalMapping = true;
 };
