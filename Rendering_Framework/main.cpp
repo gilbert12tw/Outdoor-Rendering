@@ -23,8 +23,8 @@
 #pragma comment (lib, "lib-vc2015\\glfw3.lib")
 #pragma comment(lib, "assimp-vc141-mt.lib")
 
-int FRAME_WIDTH = 2560;
-int FRAME_HEIGHT = 1440;
+int FRAME_WIDTH = 1920;
+int FRAME_HEIGHT = 1080;
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void mouseScrollCallback(GLFWwindow *window, double xoffset, double yoffset);
@@ -1379,6 +1379,7 @@ void computeDrawCommands() {
     glUniform3fv(glGetUniformLocation(programId, "cameraPos"), 1, glm::value_ptr(cameraPosition));
     glUniform3fv(glGetUniformLocation(programId, "lookCenter"), 1, glm::value_ptr(lookCenter));
     glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
+    glUniform2iv(glGetUniformLocation(programId, "Frame"), 1, glm::value_ptr(glm::ivec2(FRAME_WIDTH, FRAME_HEIGHT)));
 
     // set viewport to all
     //defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);

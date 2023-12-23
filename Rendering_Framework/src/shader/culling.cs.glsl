@@ -34,6 +34,7 @@ uniform vec4 viewPort;
 uniform vec3 cameraPos;
 uniform vec3 lookCenter;
 uniform mat4 viewProjMat;
+uniform ivec2 Frame;
 
 uniform sampler2D depth_map;
 
@@ -44,34 +45,45 @@ float radius;
 // TODO: not working now
 bool HizCulling(vec4 position){
     if (type >= 3) return true;
-    return true;
     vec4 pos = viewProjMat * vec4(position.xyz, 1.0);
 
     //pos.x += Frame.x / 2;
     //pos.y += Frame.y / 2;
 
     // viewport transform using viewPort
-    pos.x = pos.x * viewPort.z + viewPort.x;
-    pos.y = pos.y * viewPort.w + viewPort.y;
+//    pos.x = pos.x * viewPort.z + viewPort.x;
+//    pos.y = pos.y * viewPort.w + viewPort.y;
 
 
     /* divide by w to get normalized device coordinates */
     pos.xyz /= pos.w;
 
-    float viewSizeX = 2.0 * radius * (viewPort.z / 2) / pos.w;
-    float viewSizeY = 2.0 * radius * viewPort.w / pos.w;
+    // map pos.x from [-1, 1] to [0.5, 1] * frame.x
+    // map pos.y from [-1, 1] to [0, 1] * frame.y
+    pos.x = pos.x * 0.25 + 0.75;
+    pos.y = pos.y * 0.5 + 0.5;
 
     float depth = pos.z;
     depth = depth * 0.5 + 0.5;
+
+    // now is in normalize tex coord
+    // trans to texel coord
+
+    int viewSizeX = int(radius * Frame.x / pos.w);
+    int viewSizeY = int(radius * Frame.y / pos.w);
 
     float LOD = ceil(log2(max(viewSizeX, viewSizeY) / 2.0));
 
     /* finally fetch the depth texture using explicit LOD lookups */
     vec4 Samples;
-    Samples.x = textureLod( depth_map, vec2(pos.x - viewSizeX, pos.y - viewSizeY), LOD ).x;
-    Samples.y = textureLod( depth_map, vec2(pos.x - viewSizeX, pos.y + viewSizeY), LOD ).x;
-    Samples.z = textureLod( depth_map, vec2(pos.x + viewSizeX, pos.y - viewSizeY), LOD ).x;
-    Samples.w = textureLod( depth_map, vec2(pos.x + viewSizeX, pos.y + viewSizeY), LOD ).x;
+    Samples.x = textureLodOffset( depth_map, pos.xy, LOD, ivec2(0, 0) ).x;
+    Samples.y = textureLodOffset( depth_map, pos.xy, LOD, ivec2(0, 1) ).x;
+    Samples.z = textureLodOffset( depth_map, pos.xy, LOD, ivec2(1, 0) ).x;
+    Samples.w = textureLodOffset( depth_map, pos.xy, LOD, ivec2(1, 1) ).x;
+//    Samples.x = textureLod( depth_map, vec2(pos.x - viewSizeX, pos.y - viewSizeY), LOD ).x;
+//    Samples.y = textureLod( depth_map, vec2(pos.x - viewSizeX, pos.y + viewSizeY), LOD ).x;
+//    Samples.z = textureLod( depth_map, vec2(pos.x + viewSizeX, pos.y - viewSizeY), LOD ).x;
+//    Samples.w = textureLod( depth_map, vec2(pos.x + viewSizeX, pos.y + viewSizeY), LOD ).x;
     float MaxDepth = max( max( Samples.x, Samples.y ), max( Samples.z, Samples.w ) );
 
     /* if the instance depth is bigger than the depth in the texture discard the instance */
