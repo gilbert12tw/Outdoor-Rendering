@@ -89,8 +89,12 @@ void compileShaderProgram();
 void drawMagicRock();
 void drawAirplane();
 void drawIndirectRender();
+void drawBuilding();
+void drawFoliage();
+void drawGbuffer();
 
 void genHizMap();
+void flushDepth();
 
 void processBtnInput();
 
@@ -132,7 +136,7 @@ ShaderProgram* hizMipMapShaderProgram;
 // ==============================================
 
 // SSBO handle
-GLuint wholeDataBufferHandle, visibleDataBufferHandle, cmdBufferHandle;
+GLuint wholeDataBufferHandle, visibleDataBufferHandle, cmdBufferHandle, indirectBuildingBufferHandle;
 
 // ==============================================
 // uniform variable
@@ -379,13 +383,11 @@ void setUpGbuffer() {
     // for depth
     glGenTextures(1, &hiz.depth_map);
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
-    //glTexStorage2D(GL_TEXTURE_2D, 12, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
     // mip map (Hi-z)
     glGenerateMipmap(GL_TEXTURE_2D);
-    //genHizMap();
 
     // attach texture to framebuffer
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, hiz.depth_map, 0);
@@ -685,6 +687,11 @@ void loadAllSpatialSample() {
     glGenBuffers(1, &cmdBufferHandle);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cmdBufferHandle);
     glNamedBufferStorage(cmdBufferHandle, sizeof(drawCommands), drawCommands, GL_MAP_READ_BIT);
+
+    // indirect building buffer
+    glGenBuffers(1, &indirectBuildingBufferHandle);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuildingBufferHandle);
+    glNamedBufferStorage(indirectBuildingBufferHandle, sizeof(drawCommands), nullptr, GL_DYNAMIC_STORAGE_BIT);
 }
 
 void loadTexture() {
@@ -1009,8 +1016,90 @@ void drawBuilding() {
     glGetNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, cmd_data);
 
     // pass first two draw command to indirect render shader
-    glNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, nullptr);
-    //glNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 2, cmd_data);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuildingBufferHandle);
+    void *cmd_offset = ((DrawCommand*)cmd_data + 3);
+    glNamedBufferSubData(indirectBuildingBufferHandle, 0, sizeof(DrawCommand) * 2, cmd_offset);
+
+
+    const glm::ivec4 playerViewport = m_myCameraManager->playerViewport();
+    const glm::ivec4 godViewport = m_myCameraManager->godViewport();
+
+    GLuint programId = indirectRenderShaderProgram->programId();
+
+    // pass uniform
+    glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
+    glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
+    glm::mat4 viewProjMat = projMat * viewMat;
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
+
+    // set viewport to player viewport
+    defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 2, 0);
+
+    // ------------------------------------
+    // god viewport
+
+    // pass uniform
+    viewMat = m_myCameraManager->godViewMatrix();
+    projMat = m_myCameraManager->godProjectionMatrix();
+    viewProjMat = projMat * viewMat;
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
+
+    // set viewport to god viewport
+    defaultRenderer->setViewport(godViewport[0], godViewport[1], godViewport[2], godViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 2, 0);
+
+    // unbind
+    glBindVertexArray(0);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+}
+
+void drawFoliage() {
+    // shader
+    indirectRenderShaderProgram->useProgram();
+
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmdBufferHandle);
+
+    const glm::ivec4 playerViewport = m_myCameraManager->playerViewport();
+    const glm::ivec4 godViewport = m_myCameraManager->godViewport();
+
+    GLuint programId = indirectRenderShaderProgram->programId();
+
+    // pass uniform
+    glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
+    glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
+    glm::mat4 viewProjMat = projMat * viewMat;
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
+
+    // set viewport to player viewport
+    defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 3, 0);
+
+    // ------------------------------------
+    // god viewport
+
+    // pass uniform
+    viewMat = m_myCameraManager->godViewMatrix();
+    projMat = m_myCameraManager->godProjectionMatrix();
+    viewProjMat = projMat * viewMat;
+    glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
+
+    // set viewport to god viewport
+    defaultRenderer->setViewport(godViewport[0], godViewport[1], godViewport[2], godViewport[3]);
+    glBindVertexArray(mergeObject.vao);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 3, 0);
+
+    // unbind
+    glBindVertexArray(0);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+}
+
+void drawIndirectRender() {
+    // shader
+    indirectRenderShaderProgram->useProgram();
 
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmdBufferHandle);
 
@@ -1049,48 +1138,41 @@ void drawBuilding() {
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 }
 
-void drawIndirectRender() {
-    // shader
-    indirectRenderShaderProgram->useProgram();
+void drawGbuffer() {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmdBufferHandle);
+    // draw gbuffer
+    gbufferShaderProgram->useProgram();
+    int programId = gbufferShaderProgram->programId();
+    glm::vec3 eyePos = m_myCameraManager->playerViewOrig();
+    glUniform1i(glGetUniformLocation(programId, "frame_width"), FRAME_WIDTH);
+    glUniform1i(glGetUniformLocation(programId, "gbuffer_mode"), gBufferIdx);
+    glUniform1i(glGetUniformLocation(programId, "depthLevel"), depthLevel);
+    glUniform3fv(glGetUniformLocation(programId, "eye_position"), 1, glm::value_ptr(eyePos));
 
-    const glm::ivec4 playerViewport = m_myCameraManager->playerViewport();
-    const glm::ivec4 godViewport = m_myCameraManager->godViewport();
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map); // diffuse
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.normal_map);  // normal
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, gbuffer.position_map); // coord
+    glActiveTexture(GL_TEXTURE3);
+    //glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map); // depth
+    glBindTexture(GL_TEXTURE_2D, hiz.depth_map); // depth
 
-    GLuint programId = indirectRenderShaderProgram->programId();
+    // texture
+    glUniform1i(glGetUniformLocation(programId,"diffuse_map"), 0);
+    glUniform1i(glGetUniformLocation(programId,"normal_map"), 1);
+    glUniform1i(glGetUniformLocation(programId,"position_map"), 2);
+    glUniform1i(glGetUniformLocation(programId,"depth_map"), 3);
 
-    // pass uniform
-    glm::mat4 viewMat = m_myCameraManager->playerViewMatrix();
-    glm::mat4 projMat = m_myCameraManager->playerProjectionMatrix();
-    glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, false, glm::value_ptr(viewMat));
-    glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, false, glm::value_ptr(projMat));
+    // set viewport to all
+    defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
 
-    void *cmd_data = malloc(sizeof(DrawCommand) * 5);
-    glGetNamedBufferSubData(cmdBufferHandle, 0, sizeof(DrawCommand) * 5, cmd_data);
-
-    // set viewport to player viewport
-    defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
-    glBindVertexArray(mergeObject.vao);
-    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 5, 0);
-
-    // ------------------------------------
-    // god viewport
-
-    // pass uniform
-    viewMat = m_myCameraManager->godViewMatrix();
-    projMat = m_myCameraManager->godProjectionMatrix();
-    glUniformMatrix4fv(glGetUniformLocation(programId, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMat));
-    glUniformMatrix4fv(glGetUniformLocation(programId, "projMat"), 1, GL_FALSE, glm::value_ptr(projMat));
-
-    // set viewport to god viewport
-    defaultRenderer->setViewport(godViewport[0], godViewport[1], godViewport[2], godViewport[3]);
-    glBindVertexArray(mergeObject.vao);
-    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 5, 0);
-
-    // unbind
-    glBindVertexArray(0);
-    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+    glBindVertexArray(gbuffer.vao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);
 }
 
 void paintGL() {
@@ -1143,8 +1225,8 @@ void paintGL() {
     //  =======================  bind frame buffer =======================
 
     glBindFramebuffer(GL_FRAMEBUFFER, gbuffer.fbo);
-    const GLenum gbufferAttachments[] = {GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2 , GL_COLOR_ATTACHMENT3};
-    glDrawBuffers(4, gbufferAttachments);
+    const GLenum gbufferAttachments[] = {GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2};
+    glDrawBuffers(3, gbufferAttachments);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // =============================================
@@ -1163,11 +1245,39 @@ void paintGL() {
 
 	// ===============================
 
+    computeDrawCommands();
+
 	drawMagicRock();
 	drawAirplane();
+    drawBuilding();
 
     // ========= flush depth buffer to hiz map =========
 
+    flushDepth();
+    genHizMap();
+
+    // =============================================
+
+    // rebind gbuffer fbo
+    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer.fbo);
+    glDrawBuffers(3, gbufferAttachments);
+    glEnable(GL_DEPTH_TEST);
+
+    drawFoliage();
+
+    drawGbuffer();
+
+	// =============================================
+
+	ImGui::Begin("My name is window");
+	m_imguiPanel->update();
+	ImGui::End();
+
+	ImGui::Render();
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void flushDepth() {
     // bind hiz fbo
     glBindFramebuffer(GL_FRAMEBUFFER, hiz.fbo);
     glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
@@ -1191,64 +1301,6 @@ void paintGL() {
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glDepthFunc(GL_LEQUAL);
-
-    genHizMap();
-    computeDrawCommands();
-
-    // =============================================
-
-    // rebind gbuffer fbo
-    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer.fbo);
-    glDrawBuffers(4, gbufferAttachments);
-    glEnable(GL_DEPTH_TEST);
-
-    drawIndirectRender();
-
-    // ================= draw frame buffer ====================
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // draw gbuffer
-    gbufferShaderProgram->useProgram();
-    int programId = gbufferShaderProgram->programId();
-    glm::vec3 eyePos = m_myCameraManager->playerViewOrig();
-    glUniform1i(glGetUniformLocation(programId, "frame_width"), FRAME_WIDTH);
-    glUniform1i(glGetUniformLocation(programId, "gbuffer_mode"), gBufferIdx);
-    glUniform1i(glGetUniformLocation(programId, "depthLevel"), depthLevel);
-    glUniform3fv(glGetUniformLocation(programId, "eye_position"), 1, glm::value_ptr(eyePos));
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map); // diffuse
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, gbuffer.normal_map);  // normal
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, gbuffer.position_map); // coord
-    glActiveTexture(GL_TEXTURE3);
-    //glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map); // depth
-    glBindTexture(GL_TEXTURE_2D, hiz.depth_map); // depth
-
-    // texture
-    glUniform1i(glGetUniformLocation(programId,"diffuse_map"), 0);
-    glUniform1i(glGetUniformLocation(programId,"normal_map"), 1);
-    glUniform1i(glGetUniformLocation(programId,"position_map"), 2);
-    glUniform1i(glGetUniformLocation(programId,"depth_map"), 3);
-
-    // set viewport to all
-    defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
-
-    glBindVertexArray(gbuffer.vao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);
-
-	// =============================================
-
-	ImGui::Begin("My name is window");
-	m_imguiPanel->update();
-	ImGui::End();
-
-	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 void genHizMap() {

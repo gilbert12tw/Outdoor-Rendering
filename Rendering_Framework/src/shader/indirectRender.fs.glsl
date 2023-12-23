@@ -29,18 +29,4 @@ void main() {
         color1 = vec4(normalize(normal), 0.0);
     }
     color2 = vec4(worldPosition, 0.0); // w -> specular
-
-    /*
-    vec3 V = normalize(viewDirection);
-    vec3 L = normalize(lightDirection);
-    vec3 N = normalize(normal);
-    vec3 R = reflect(-L, N);
-
-    vec3 diffuse = texel.xyz * max(dot(N, L), 0.0) * diffuseLight;
-    vec3 ambient = texel.xyz * ambientLight;
-
-    fragColor = vec4(ambient + diffuse, 1.0);
-    // gamma correction
-    fragColor = pow(fragColor, vec4(0.5));
-    */
 }

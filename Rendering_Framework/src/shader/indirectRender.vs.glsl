@@ -9,8 +9,7 @@ out vec3 viewDirection;
 out vec3 lightDirection;
 out vec3 worldPosition;
 
-uniform mat4 projMat;
-uniform mat4 viewMat;
+uniform mat4 viewProjMat;
 
 const vec3 lightDirection_world = vec3(0.4, 0.5, 0.8);
 
@@ -59,5 +58,5 @@ void main() {
     worldPosition = postion.xyz;
     normal = in_normal;
 
-    gl_Position = projMat * viewMat * postion;
+    gl_Position = viewProjMat * postion;
 }

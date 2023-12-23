@@ -25,14 +25,6 @@ void main(void)
     vec3 normal = texelFetch(normal_map, ivec2(gl_FragCoord.xy), 0).rgb;
     vec3 position = texelFetch(position_map, ivec2(gl_FragCoord.xy), 0).rgb;
     float specular = texelFetch(position_map, ivec2(gl_FragCoord.xy), 0).w;
-    /*
-    if (gbuffer_mode == 6 && gl_FragCoord.x < frame_width / 2) {
-        diffuse = texelFetch(diffuse_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).rgb;
-        normal = texelFetch(normal_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).rgb;
-        position = texelFetch(position_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).rgb;
-        specular = texelFetch(position_map, ivec2(gl_FragCoord.xy) + ivec2(frame_width/2, 0.0), 0).w;
-    }
-    */
 
     if (gbuffer_mode == 1) {
         fragColor = vec4(normalize(position) * 0.5 + 0.5, 1.0);
