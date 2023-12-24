@@ -30,11 +30,11 @@ layout (std430, binding=3) buffer DrawCommandsBlock{
     DrawCommand commands[] ;
 };
 
-uniform vec4 viewPort;
 uniform vec3 cameraPos;
-uniform vec3 lookCenter;
+uniform vec4 viewPort;
 uniform mat4 viewProjMat;
 uniform ivec2 Frame;
+uniform int enableHiz;
 
 uniform sampler2D depth_map;
 
@@ -42,22 +42,15 @@ int type;
 vec3 offset;
 float radius;
 
-// TODO: not working now
 bool HizCulling(vec4 position){
+    if (enableHiz == 0) return true;
     if (type >= 3) return true;
     vec4 pos = viewProjMat * vec4(position.xyz, 1.0);
-
-    //pos.x += Frame.x / 2;
-    //pos.y += Frame.y / 2;
-
-    // viewport transform using viewPort
-//    pos.x = pos.x * viewPort.z + viewPort.x;
-//    pos.y = pos.y * viewPort.w + viewPort.y;
-
 
     /* divide by w to get normalized device coordinates */
     pos.xyz /= pos.w;
 
+    // viewport transform using viewPort
     // map pos.x from [-1, 1] to [0.5, 1] * frame.x
     // map pos.y from [-1, 1] to [0, 1] * frame.y
     pos.x = pos.x * 0.25 + 0.75;
@@ -80,10 +73,6 @@ bool HizCulling(vec4 position){
     Samples.y = textureLodOffset( depth_map, pos.xy, LOD, ivec2(0, 1) ).x;
     Samples.z = textureLodOffset( depth_map, pos.xy, LOD, ivec2(1, 0) ).x;
     Samples.w = textureLodOffset( depth_map, pos.xy, LOD, ivec2(1, 1) ).x;
-//    Samples.x = textureLod( depth_map, vec2(pos.x - viewSizeX, pos.y - viewSizeY), LOD ).x;
-//    Samples.y = textureLod( depth_map, vec2(pos.x - viewSizeX, pos.y + viewSizeY), LOD ).x;
-//    Samples.z = textureLod( depth_map, vec2(pos.x + viewSizeX, pos.y - viewSizeY), LOD ).x;
-//    Samples.w = textureLod( depth_map, vec2(pos.x + viewSizeX, pos.y + viewSizeY), LOD ).x;
     float MaxDepth = max( max( Samples.x, Samples.y ), max( Samples.z, Samples.w ) );
 
     /* if the instance depth is bigger than the depth in the texture discard the instance */
@@ -92,7 +81,6 @@ bool HizCulling(vec4 position){
 
 bool furstrum_culling(vec4 position){
     if (distance(cameraPos, position.xyz) > 400.0) return false;
-
 
     position.xyz += offset;
     vec4 pos = viewProjMat * vec4(position.xyz, 1.0);

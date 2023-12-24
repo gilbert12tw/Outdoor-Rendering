@@ -23,8 +23,8 @@
 #pragma comment (lib, "lib-vc2015\\glfw3.lib")
 #pragma comment(lib, "assimp-vc141-mt.lib")
 
-int FRAME_WIDTH = 1920;
-int FRAME_HEIGHT = 1080;
+int FRAME_WIDTH = 2560;
+int FRAME_HEIGHT = 1440;
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void mouseScrollCallback(GLFWwindow *window, double xoffset, double yoffset);
@@ -140,9 +140,10 @@ GLuint wholeDataBufferHandle, visibleDataBufferHandle, cmdBufferHandle, indirect
 
 // ==============================================
 // uniform variable
-bool normalMaping;
+bool normalMaping = true;
 int gBufferIdx = 5;
 int depthLevel = 0;
+bool enableHiz = true;
 
 int main(){
 	glfwInit();
@@ -1375,17 +1376,10 @@ void computeDrawCommands() {
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map); // depth
     glUniform1i(glGetUniformLocation(programId, "depth_map"), 0);
 
-    glUniform4fv(glGetUniformLocation(programId, "viewPort"), 1, glm::value_ptr(playerViewport));
+    glUniform1i(glGetUniformLocation(programId, "enableHiz"), enableHiz);
     glUniform3fv(glGetUniformLocation(programId, "cameraPos"), 1, glm::value_ptr(cameraPosition));
-    glUniform3fv(glGetUniformLocation(programId, "lookCenter"), 1, glm::value_ptr(lookCenter));
     glUniformMatrix4fv(glGetUniformLocation(programId, "viewProjMat"), 1, false, glm::value_ptr(viewProjMat));
     glUniform2iv(glGetUniformLocation(programId, "Frame"), 1, glm::value_ptr(glm::ivec2(FRAME_WIDTH, FRAME_HEIGHT)));
-
-    // set viewport to all
-    //defaultRenderer->setViewport(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
-
-    // set viewport to player viewport
-    //defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
 
     glDispatchCompute(571641, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -1418,18 +1412,15 @@ void processBtnInput() {
         m_myCameraManager->teleport(teleportIdx);
     }
 
-    // normal map
     normalMaping = m_imguiPanel->getNormalMapping();
-
-    // G-buffer index
     gBufferIdx = m_imguiPanel->getGBufferIdx();
-
     depthLevel = m_imguiPanel->getDepthLevel();
+    enableHiz = m_imguiPanel->getHiZ();
 }
 
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods){
-	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && cursorPos[0] < FRAME_WIDTH / 2.0) {
 		m_myCameraManager->mousePress(RenderWidgetMouseButton::M_LEFT, cursorPos[0], cursorPos[1]);
 	}
 	else if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {

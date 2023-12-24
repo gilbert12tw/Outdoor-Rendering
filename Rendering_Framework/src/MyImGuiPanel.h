@@ -20,6 +20,7 @@ public:
     bool getNormalMapping() { return normalMapping; }
     int getGBufferIdx() { return gBufferIdx; }
     int getDepthLevel() { return depthLevel; }
+    bool getHiZ() { return enableHiZ; }
 
 private:
 	double m_avgFPS;
@@ -28,4 +29,5 @@ private:
     int gBufferIdx = 5;
     int depthLevel = 0;
     bool normalMapping = true;
+    bool enableHiZ = true;
 };

@@ -64,6 +64,7 @@ void main(void)
         float near = 0.1;
         float far = 500.0;
         depth = (2.0 * near) / (far + near - depth * (far - near));
+        depth = clamp(depth, 0.0, 1.0);
         fragColor = vec4(depth, depth, depth, 1.0);
         return;
     }

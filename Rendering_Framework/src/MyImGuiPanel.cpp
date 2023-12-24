@@ -63,12 +63,15 @@ void MyImGuiPanel::update() {
     if (ImGui::Button("Specular")) {
         gBufferIdx = 4;
     }
-    ImGui::SameLine();
     if (ImGui::Button("Depth")) {
         gBufferIdx = 6;
     }
+    ImGui::SameLine();
     // slider for depth level
     ImGui::SliderInt("Depth Level", &depthLevel, 0, 11);
+    if (ImGui::Button("Hi-z Occlusion Culling")) {
+        enableHiZ = !enableHiZ;
+    }
 }
 
 int MyImGuiPanel::getTeleportIdx() {
