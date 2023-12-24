@@ -23,7 +23,7 @@
 #pragma comment (lib, "lib-vc2015\\glfw3.lib")
 #pragma comment(lib, "assimp-vc141-mt.lib")
 
-int FRAME_WIDTH = 2560;
+int FRAME_WIDTH = 1920;
 int FRAME_HEIGHT = 1440;
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
@@ -317,28 +317,29 @@ void setUpGbuffer() {
     // for diffuse
     glGenTextures(1, &gbuffer.diffuse_map);
     glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for normal
     glGenTextures(1, &gbuffer.normal_map);
     glBindTexture(GL_TEXTURE_2D, gbuffer.normal_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for coordinate
     glGenTextures(1, &gbuffer.position_map);
     glBindTexture(GL_TEXTURE_2D, gbuffer.position_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for depth
     glGenTextures(1, &gbuffer.depth_map);
     glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+    //glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -384,12 +385,9 @@ void setUpGbuffer() {
     // for depth
     glGenTextures(1, &hiz.depth_map);
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
-    //glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    //glTexStorage2D(GL_TEXTURE_2D,12,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
-
-    int numLevels = 1 + (int)floorf(log2f(fmaxf(FRAME_WIDTH, FRAME_HEIGHT)));
-    glTexStorage2D(GL_TEXTURE_2D, numLevels,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
-
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
     // mip map (Hi-z)
@@ -1238,7 +1236,8 @@ void paintGL() {
     // =============================================
 
 	// rendering with player view
-	defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+	//defaultRenderer->setViewport(playerViewport[0], playerViewport[1], playerViewport[2], playerViewport[3]);
+    defaultRenderer->setViewport(FRAME_WIDTH / 2, 0, FRAME_WIDTH / 2, FRAME_HEIGHT );
 	defaultRenderer->setView(playerVM);
 	defaultRenderer->setProjection(playerProjMat);
 	defaultRenderer->renderPass();
@@ -1519,34 +1518,38 @@ void resize(const int w, const int h) {
 
     // for diffuse
     glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, w, h);
+    //glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, w, h);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for normal
     glBindTexture(GL_TEXTURE_2D, gbuffer.normal_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
+    //glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for coordinate
     glBindTexture(GL_TEXTURE_2D, gbuffer.position_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
+    //glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA32F, w, h);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // for depth
     glBindTexture(GL_TEXTURE_2D, gbuffer.depth_map);
-    glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, w, h);
+    //glTexStorage2D(GL_TEXTURE_2D,1,GL_DEPTH_COMPONENT32F, w, h);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
-    //glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    int numLevels = 1 + (int)floorf(log2f(fmaxf(w, h)));
-    glTexStorage2D(GL_TEXTURE_2D, numLevels,GL_DEPTH_COMPONENT32F, w, h);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
     glGenerateMipmap(GL_TEXTURE_2D);
 }
 
