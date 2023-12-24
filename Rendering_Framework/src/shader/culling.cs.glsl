@@ -62,10 +62,10 @@ bool HizCulling(vec4 position){
     // now is in normalize tex coord
     // trans to texel coord
 
-    int viewSizeX = int(radius * Frame.x / pos.w);
-    int viewSizeY = int(radius * Frame.y / pos.w);
+    float viewSizeX = (radius * Frame.x / pos.w);
+    float viewSizeY = (radius * Frame.y / pos.w);
 
-    float LOD = ceil(log2(max(viewSizeX, viewSizeY) / 2.0));
+    float LOD = ceil(log2(max(viewSizeX, viewSizeY) ));
 
     /* finally fetch the depth texture using explicit LOD lookups */
     vec4 Samples;
