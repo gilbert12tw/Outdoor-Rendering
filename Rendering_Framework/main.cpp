@@ -384,7 +384,12 @@ void setUpGbuffer() {
     // for depth
     glGenTextures(1, &hiz.depth_map);
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    //glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    //glTexStorage2D(GL_TEXTURE_2D,12,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+
+    int numLevels = 1 + (int)floorf(log2f(fmaxf(FRAME_WIDTH, FRAME_HEIGHT)));
+    glTexStorage2D(GL_TEXTURE_2D, numLevels,GL_DEPTH_COMPONENT32F, FRAME_WIDTH, FRAME_HEIGHT);
+
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
     // mip map (Hi-z)
@@ -1508,6 +1513,10 @@ void resize(const int w, const int h) {
 	FRAME_HEIGHT = h;
 
     glViewport(0, 0, w, h);
+    m_myCameraManager->resize(w, h);
+    defaultRenderer->resize(w, h);
+    updateWhenPlayerProjectionChanged(0.1, m_myCameraManager->playerCameraFar());
+
     // for diffuse
     glBindTexture(GL_TEXTURE_2D, gbuffer.diffuse_map);
     glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8, w, h);
@@ -1533,15 +1542,12 @@ void resize(const int w, const int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     glBindTexture(GL_TEXTURE_2D, hiz.depth_map);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    //glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    int numLevels = 1 + (int)floorf(log2f(fmaxf(w, h)));
+    glTexStorage2D(GL_TEXTURE_2D, numLevels,GL_DEPTH_COMPONENT32F, w, h);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glGenerateMipmap(GL_TEXTURE_2D);
-
-	m_myCameraManager->resize(w, h);
-	defaultRenderer->resize(w, h);
-	updateWhenPlayerProjectionChanged(0.1, m_myCameraManager->playerCameraFar());
-
 }
 
 void viewFrustumMultiClipCorner(const std::vector<float> &depths, const glm::mat4 &viewMat, const glm::mat4 &projMat, float *clipCorner) {
